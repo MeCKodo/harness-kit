@@ -10,3 +10,8 @@ dist/
 # Slimmed copies of internal repos, used only to check that harness-kit
 # upgrades don't break real project shapes. Local-only, never pushed.
 /fixtures/
+
+# Local release secrets & runbook — NEVER commit.
+# .npmrc holds a live npmjs publish token; RELEASE.local.md is the runbook.
+.npmrc
+/RELEASE.local.md
