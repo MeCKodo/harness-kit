@@ -1,6 +1,14 @@
 import type { Manifest } from "./manifest";
 import { GEN_HEADER } from "./util";
 
+/** Safely stringify a manifest value — objects become JSON instead of [object Object]. */
+function safeStr(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (v == null) return "";
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return JSON.stringify(v);
+}
+
 /** Generated tool files. Each returns [relPath, content]. Routing/modules only when present. */
 export function renderTargets(m: Manifest): Array<[string, string]> {
   const targets: Array<[string, string]> = [
@@ -46,16 +54,16 @@ export function renderAgentsMd(m: Manifest): string {
 
   if (id.scope_in?.length || id.scope_out?.length) {
     L.push("## Scope");
-    if (id.scope_in?.length) L.push("", "In scope:", ...id.scope_in.map((s) => `- ${s}`));
+    if (id.scope_in?.length) L.push("", "In scope:", ...id.scope_in.map((s) => `- ${safeStr(s)}`));
     if (id.scope_out?.length)
-      L.push("", "Out of scope (do NOT modify here):", ...id.scope_out.map((s) => `- ${s}`));
+      L.push("", "Out of scope (do NOT modify here):", ...id.scope_out.map((s) => `- ${safeStr(s)}`));
     L.push("");
   }
 
   if (id.upstream?.length || id.downstream?.length) {
     L.push("## Dependencies");
-    if (id.upstream?.length) L.push("", `Upstream: ${id.upstream.join(", ")}`);
-    if (id.downstream?.length) L.push("", `Downstream: ${id.downstream.join(", ")}`);
+    if (id.upstream?.length) L.push("", `Upstream: ${id.upstream.map(safeStr).join(", ")}`);
+    if (id.downstream?.length) L.push("", `Downstream: ${id.downstream.map(safeStr).join(", ")}`);
     L.push("");
   }
 
@@ -118,10 +126,10 @@ export function renderRoutingMd(m: Manifest): string {
   L.push("Find the change-type that matches your task and follow that row before editing.", "");
   for (const r of m.routing ?? []) {
     L.push(`## ${r.when}`);
-    if (r.read?.length) L.push(`- Read first: ${r.read.map((s) => `\`${s}\``).join(", ")}`);
-    if (r.entry?.length) L.push(`- Entry points: ${r.entry.map((s) => `\`${s}\``).join(", ")}`);
-    if (r.dont_assume?.length) for (const d of r.dont_assume) L.push(`- Do NOT assume: ${d}`);
-    if (r.verify?.length) L.push(`- Minimum verification: ${r.verify.map((s) => `\`${s}\``).join(", ")}`);
+    if (r.read?.length) L.push(`- Read first: ${r.read.map((s) => `\`${safeStr(s)}\``).join(", ")}`);
+    if (r.entry?.length) L.push(`- Entry points: ${r.entry.map((s) => `\`${safeStr(s)}\``).join(", ")}`);
+    if (r.dont_assume?.length) for (const d of r.dont_assume) L.push(`- Do NOT assume: ${safeStr(d)}`);
+    if (r.verify?.length) L.push(`- Minimum verification: ${r.verify.map((s) => `\`${safeStr(s)}\``).join(", ")}`);
     L.push("");
   }
   return L.join("\n");
@@ -134,11 +142,11 @@ export function renderModulesMd(m: Manifest): string {
   L.push("# Module map", "");
   for (const mod of m.modules ?? []) {
     L.push(`## ${mod.name} — ${mod.role}`);
-    if (mod.entry?.length) L.push(`- Entry: ${mod.entry.map((s) => `\`${s}\``).join(", ")}`);
-    if (mod.upstream?.length) L.push(`- Upstream: ${mod.upstream.join(", ")}`);
-    if (mod.downstream?.length) L.push(`- Downstream: ${mod.downstream.join(", ")}`);
-    if (mod.must_know?.length) for (const k of mod.must_know) L.push(`- Must know: ${k}`);
-    if (mod.pitfalls?.length) for (const p of mod.pitfalls) L.push(`- Pitfall: ${p}`);
+    if (mod.entry?.length) L.push(`- Entry: ${mod.entry.map((s) => `\`${safeStr(s)}\``).join(", ")}`);
+    if (mod.upstream?.length) L.push(`- Upstream: ${mod.upstream.map(safeStr).join(", ")}`);
+    if (mod.downstream?.length) L.push(`- Downstream: ${mod.downstream.map(safeStr).join(", ")}`);
+    if (mod.must_know?.length) for (const k of mod.must_know) L.push(`- Must know: ${safeStr(k)}`);
+    if (mod.pitfalls?.length) for (const p of mod.pitfalls) L.push(`- Pitfall: ${safeStr(p)}`);
     L.push("");
   }
   return L.join("\n");

@@ -110,13 +110,34 @@ export interface ValidationIssue {
 
 export function validateManifest(m: Manifest): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
+
+  /** 检查数组元素是否全为字符串，否则报错。prefix 用于错误信息。 */
+  function checkStrArr(arr: unknown[] | undefined, prefix: string): void {
+    if (!arr) return;
+    for (let i = 0; i < arr.length; i++) {
+      if (typeof arr[i] !== "string") {
+        issues.push({
+          level: "error",
+          msg: `${prefix}[${i}] 必须是字符串（当前是 ${typeof arr[i]}）`,
+        });
+      }
+    }
+  }
+
   if (!m.spec) issues.push({ level: "error", msg: "缺少 spec 字段" });
   if (!m.identity?.name) issues.push({ level: "error", msg: "identity.name 必填" });
   if (!m.identity?.summary) issues.push({ level: "warn", msg: "identity.summary 建议填写" });
 
+  // identity 下的字符串数组
+  checkStrArr(m.identity?.scope_in as unknown[] | undefined, "identity.scope_in");
+  checkStrArr(m.identity?.scope_out as unknown[] | undefined, "identity.scope_out");
+  checkStrArr(m.identity?.upstream as unknown[] | undefined, "identity.upstream");
+  checkStrArr(m.identity?.downstream as unknown[] | undefined, "identity.downstream");
+
   for (const [verb, cap] of Object.entries(m.capabilities ?? {})) {
     if (!cap?.run) issues.push({ level: "error", msg: `capabilities.${verb}.run 必填` });
   }
+
   const seen = new Set<string>();
   for (const inv of m.invariants ?? []) {
     if (!inv.id) {
@@ -128,12 +149,27 @@ export function validateManifest(m: Manifest): ValidationIssue[] {
     if (!inv.enforcement && !inv.check && !inv.manual) {
       issues.push({ level: "warn", msg: `invariant ${inv.id} 既无 enforcement/check 也未标 manual` });
     }
+    // enforcement 下的字符串数组
+    const pfx = `invariant "${inv.id}" 的 enforcement`;
+    checkStrArr(inv.enforcement?.forbid_pattern as unknown[] | undefined, `${pfx}.forbid_pattern`);
+    checkStrArr(inv.enforcement?.forbid_import as unknown[] | undefined, `${pfx}.forbid_import`);
+    checkStrArr(inv.enforcement?.require_pattern as unknown[] | undefined, `${pfx}.require_pattern`);
+    checkStrArr(inv.enforcement?.path_glob as unknown[] | undefined, `${pfx}.path_glob`);
+  }
+
+  // knowledge.binds
+  for (const k of m.knowledge ?? []) {
+    checkStrArr(k.binds as unknown[] | undefined, `knowledge "${k.path}" 的 binds`);
   }
 
   const capVerbs = new Set(Object.keys(m.capabilities ?? {}));
   for (const r of m.routing ?? []) {
     if (!r.when) issues.push({ level: "error", msg: "存在缺少 when 的 routing 条目" });
+    for (const field of ["read", "entry", "dont_assume", "verify"] as const) {
+      checkStrArr(r[field] as unknown[] | undefined, `routing "${r.when}" 的 ${field}`);
+    }
     for (const v of r.verify ?? []) {
+      if (typeof v !== "string") continue; // 上面已报错，跳过语义检查
       // a verify step is either a known capability verb or a raw command (has a space)
       if (!v.includes(" ") && !capVerbs.has(v))
         issues.push({ level: "warn", msg: `routing "${r.when}" 的 verify 引用了未声明的 capability: ${v}` });
@@ -150,6 +186,9 @@ export function validateManifest(m: Manifest): ValidationIssue[] {
     modSeen.add(mod.name);
     if (!mod.entry?.length)
       issues.push({ level: "warn", msg: `module ${mod.name} 未声明 entry（无法做新鲜度绑定）` });
+    for (const field of ["entry", "upstream", "downstream", "must_know", "pitfalls"] as const) {
+      checkStrArr(mod[field] as unknown[] | undefined, `module "${mod.name}" 的 ${field}`);
+    }
   }
   return issues;
 }
