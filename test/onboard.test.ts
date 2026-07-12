@@ -86,6 +86,9 @@ test("onboard separates analysis from sync and installs only required Agent hook
   assert.match(out, /当前真正使用的客户端.*--agents/);
   assert.match(out, /harness-kit install-hooks --repo \. --stop --agents codex --allow-user-dispatcher/);
   assert.match(out, /未登记的仓库.*不执行/);
+  assert.match(out, /Orca.*CODEX_HOME.*生成态运行时.*~\/.codex/);
+  assert.match(out, /不得直接补丁.*运行时.*Orca 管理脚本.*trust hash/);
+  assert.match(out, /全新的 Orca Agent 会话.*evidence/);
   assert.match(out, /不让用户选择.*实现方式/);
   assert.match(out, /全新的 Agent 会话/);
   assert.match(out, /evidence.*SessionStart.*Stop.*run-checks \+ verify/);

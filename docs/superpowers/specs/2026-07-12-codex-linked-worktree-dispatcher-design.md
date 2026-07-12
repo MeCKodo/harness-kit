@@ -8,11 +8,13 @@ Status: approved for implementation
 
 Codex CLI 0.144.1 loads project-level `.codex/hooks.json` in an ordinary Git checkout but silently ignores the same file in a linked worktree, where `.git` is a pointer file. The failure reproduces both inside and outside Orca, so this is a generic Codex linked-worktree compatibility gap rather than an Orca-specific repository format.
 
+Orca adds one host boundary: its active `CODEX_HOME` is regenerated for each terminal from the user's system Codex home. Writing the generated runtime makes an install look successful until the next terminal refresh removes it. The linked-worktree protocol remains generic, but its user-Hook source resolver needs a narrow Orca adapter.
+
 This breaks the Harness delivery loop on the environment where it matters most: an Agent can install the project files, but SessionStart does not capture the task base and Stop does not run `run-checks + verify`. Reporting that setup as active would be false.
 
 ## Goals
 
-- Make Codex lifecycle validation work in any standard Git linked worktree without hard-coding Orca paths or APIs.
+- Make Codex lifecycle validation work in any standard Git linked worktree; keep Git-shape detection host-neutral and isolate Orca handling to user-Hook source selection.
 - Keep ordinary repositories on project-level Codex hooks.
 - Let the onboarding Agent detect the repository shape and complete the correct installation automatically.
 - Require at most one understandable Codex trust confirmation for the machine-level dispatcher; subsequent worktree registrations must not create new Hook commands.
@@ -60,7 +62,7 @@ The normal onboarding Agent remains the primary interface. It will:
 4. Explain in plain language that Codex may show one security review for the machine-level Harness dispatcher.
 5. Start or request a fresh Codex session, then require `harness-kit evidence` to report `hookActive: true` before calling onboarding complete.
 
-The flag is explicit because the command writes under `CODEX_HOME`, but the Agent chooses it automatically after detecting the linked-worktree condition. The user does not need to understand or compose the command.
+The flag is explicit because the command writes a user-level Codex Hook source, but the Agent chooses it automatically after detecting the linked-worktree condition. The user does not need to understand or compose the command. In Orca, the Agent must start a fresh terminal after installation so the host mirrors that source into its generated runtime.
 
 If the client cannot start a fresh session automatically, onboarding must stop at `CONFIGURED` and provide one exact next action. It must never simulate `hook-event` to manufacture activity.
 
@@ -78,7 +80,7 @@ Keeping the project files preserves ordinary-checkout support and makes linked w
 
 ### User dispatcher layer
 
-The installer resolves `CODEX_HOME` from the environment, falling back to `~/.codex`, canonicalizes that directory, and manages:
+The installer resolves and canonicalizes the user-Hook source. Normally that is `CODEX_HOME`, falling back to `~/.codex`. If an Orca worktree marker is present and canonical `ORCA_CODEX_HOME` equals canonical `CODEX_HOME`, the runtime is derived, so the source is canonical `~/.codex`. This condition never decides whether the repository is a linked worktree; canonical Git admin/common directories remain authoritative. The installer manages under the selected source:
 
 - `$CODEX_HOME/harness-kit/codex-linked-dispatch-v1.cjs`
 - one exact SessionStart entry in `$CODEX_HOME/hooks.json`
@@ -123,7 +125,7 @@ Without `--allow-user-dispatcher`, selecting Codex in a linked worktree fails wi
 
 With the flag, installation follows an activation-last sequence:
 
-1. Preflight all project files, `CODEX_HOME/hooks.json`, the dispatcher target, and the worktree registration target. Reject symlinked targets, invalid JSON, unknown Hook structures, foreign dispatcher files, or paths escaping their approved roots.
+1. Preflight all project files, the selected user-Hook source `hooks.json`, the dispatcher target, and the worktree registration target. Reject symlinked targets, invalid JSON, unknown Hook structures, foreign dispatcher files, or paths escaping their approved roots.
 2. Install or refresh the versioned dispatcher and merge the two exact managed entries into user `hooks.json`. Existing foreign Hook groups keep their values and original order; Harness never replaces or normalizes their commands.
 3. Write the project runner and project client files through the existing project transaction.
 4. Re-authorize all captured source bytes to detect concurrent edits.
@@ -131,7 +133,7 @@ With the flag, installation follows an activation-last sequence:
 
 Failure before the last step can leave reusable but inert user infrastructure; it cannot activate a half-installed project. Every step is idempotent, and a retry repairs the inert state. A concurrent change to user hooks causes a non-zero refusal rather than overwrite or guessed merge.
 
-New user infrastructure uses private directories and restrictive file modes. Existing user file modes are preserved where possible. The installer never edits `config.toml` trust state.
+New user infrastructure uses private directories and restrictive file modes. Existing user file modes are preserved where possible. The installer never edits `config.toml` trust state, Orca's managed runtime files, or Orca's management scripts. A fresh Orca terminal performs the normal source-to-runtime mirror.
 
 The worktree registration is automatically removed with its Git admin directory when Git removes that worktree. The shared dispatcher intentionally remains as reusable, inert machine infrastructure; with no registrations it only performs the Git/registration existence check and exits. Its managed paths and manual removal instructions are printed after first installation.
 
@@ -160,7 +162,7 @@ Unrelated Orca/Otty Hook edits must not make Harness evidence stale. Any Harness
 ## Error handling
 
 - Missing fallback permission in a linked worktree: fail installation with the exact retry command.
-- Invalid or symlinked `CODEX_HOME/hooks.json`: refuse all fallback writes.
+- Invalid or symlinked user-Hook source `hooks.json`: refuse all fallback writes.
 - Foreign file at the dispatcher path: refuse even with `--force`.
 - Invalid existing user Hook JSON shape: preserve it and refuse to guess.
 - Runner or registration tampered after installation: fail closed during lifecycle and report `DEGRADED`.
@@ -171,7 +173,8 @@ Unrelated Orca/Otty Hook edits must not make Harness evidence stale. Any Harness
 
 The bundled onboarding skill must treat setup as an Agent-owned workflow:
 
-- inspect Git shape rather than infer from directory names or Orca environment variables;
+- inspect Git shape rather than infer linked-worktree status from directory names or Orca environment variables;
+- when Orca identifies its generated runtime, install into the system Codex source and require a fresh terminal instead of patching the runtime;
 - select the fallback only for Codex linked worktrees;
 - preserve and report existing user Hook entries;
 - never ask the user to decide between technical Hook formats;
@@ -185,6 +188,7 @@ The bundled onboarding skill must treat setup as an Agent-owned workflow:
 ### Focused automated tests
 
 - linked-worktree detection compares canonical Git admin/common directories, does not depend on Orca variables, and does not mistake a submodule for a linked worktree;
+- Orca source selection leaves the generated runtime untouched, preserves system user Hook groups, and records the system source in the worktree registration;
 - linked Codex install without the explicit flag fails without registration;
 - dispatcher installation preserves existing user Hook entries and is idempotent;
 - invalid JSON, symlink targets, foreign dispatcher files, and concurrent edits fail closed;

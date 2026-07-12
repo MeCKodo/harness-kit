@@ -363,14 +363,16 @@ export function installStopHooks(
     ok("codex: enabled project hooks -> .codex/config.toml");
     ok("codex: installed SessionStart + Stop hooks -> .codex/hooks.json");
     if (linkedPlan) {
-      ok(`codex: installed linked-worktree dispatcher -> ${join(linkedPlan.codexHome, "harness-kit", "codex-linked-dispatch-v1.cjs")}`);
+      ok(`codex: installed linked-worktree dispatcher source -> ${join(linkedPlan.codexHome, "harness-kit", "codex-linked-dispatch-v1.cjs")}`);
       ok(`codex: registered this worktree -> ${join(linkedPlan.gitDir, "harness-kit", "codex-linked-dispatch-v1.json")}`);
     }
   }
 
   if (agents.includes("codex")) {
     warn(
-      linkedPlan
+      linkedPlan?.requiresRuntimeRefresh
+        ? "codex: Orca mirrors this user Hook source into new terminals; start a fresh Orca Agent session, then review `/hooks` once"
+        : linkedPlan
         ? "codex: run `/hooks` once to review and trust the Harness user dispatcher before it can run"
         : "codex: run `/hooks` to review and trust the new project hooks before they can run",
     );

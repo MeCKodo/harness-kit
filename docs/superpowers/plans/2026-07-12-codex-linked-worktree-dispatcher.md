@@ -23,7 +23,7 @@
 
 ## File map
 
-- Create `src/codex-linked-hooks.ts`: linked-worktree detection, CODEX_HOME path resolution, user Hook rendering, dispatcher source, registration preparation/commit, inspection and fingerprint artifacts.
+- Create `src/codex-linked-hooks.ts`: linked-worktree detection, user-Hook source resolution (including Orca's derived runtime), user Hook rendering, dispatcher source, registration preparation/commit, inspection and fingerprint artifacts.
 - Create `test/codex-linked-hooks.test.ts`: focused security, dispatch, idempotency, isolation and tamper tests.
 - Modify `src/commands/stop-hooks.ts`: select native project Hook vs linked dispatcher, preserve activation-last ordering, expose the effective install result.
 - Modify `src/commands/install-hooks.ts`: carry the explicit fallback permission.
@@ -486,7 +486,7 @@
 
 - [ ] **Step 6: Real Orca linked-worktree lifecycle**
 
-  Use Orca CLI to start a new Codex terminal in an isolated real-project evaluation worktree. Let the Agent make only a safe fixture/document test change, forbid manual Harness commands, wait through Stop, and require ACTIVE evidence. Restore only test-only local CLI overrides afterward.
+  Install into the system `~/.codex` Hook source while leaving Orca's generated runtime untouched, then use Orca CLI to start a new Codex terminal in an isolated real-project evaluation worktree. Let the Agent make only a safe fixture/document test change, forbid manual Harness commands, wait through Stop, and require ACTIVE evidence. Restore only test-only local CLI overrides afterward.
 
 - [ ] **Step 7: Negative and stale controls**
 
@@ -494,7 +494,7 @@
 
 - [ ] **Step 8: Third-party Hook preservation audit**
 
-  Hash and semantically compare all pre-existing Orca/Otty user Hook groups before and after install. Expected: values and order unchanged; only the two exact Harness groups are added.
+  Hash and semantically compare all pre-existing system Orca/Otty user Hook groups before and after install, then confirm Orca mirrors them into a fresh runtime. Expected: values and order unchanged; only the two exact Harness groups are added, and the old generated runtime was never patched in place.
 
 - [ ] **Step 9: Review, report and final commit**
 

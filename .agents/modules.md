@@ -77,6 +77,7 @@
 - Pitfall: run-checks 7 分钟 + verify 2 分钟必须小于客户端 10 分钟 hook 上限，超时要来得及返回 blocking 协议
 - Pitfall: Codex linked worktree 必须显式安装用户分发器 fallback；无登记 silent no-op，有登记但路径/权限/runner hash 不一致则 fail closed
 - Pitfall: linked worktree 要比较 canonical git-dir 与 git-common-dir，不能把同样使用 .git 文件的 submodule 误判为 linked
+- Pitfall: Orca 的 CODEX_HOME 是生成态；用户分发器必须写入 ~/.codex 源配置并由新终端镜像，不能补丁运行时 hooks、Orca 管理脚本或 trust 状态
 - Pitfall: 原生 Git hooks 可能由 linked worktrees 共享；默认拒绝共享/custom/global/foreign hooks，不能用 --force 覆盖第三方 hook
 - Pitfall: Agent hook runner 与客户端配置必须整组预检、事务写入；拒绝配置软链接和未知 hooks 结构，不能写到项目外或留半套配置
 - Pitfall: ACTIVE 只认安装器生成的精确 runner 与逐 agent/event 命令；marker 文本或不安全 HARNESS_KIT_CMD 前缀都不构成配置证据

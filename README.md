@@ -108,7 +108,7 @@ harness-kit 的长期价值不在首次接入，而在**代码演进时上下文
 
 普通 worktree 的 Agent Hook 只写项目内普通文件：runner 与所选客户端配置会先整组预检，再事务写入，最终路径及父目录都不能是软链接。已有 JSON 的 `hooks` 结构无法安全合并、或 runner 属于第三方时，整组拒绝且不留半套文件；`--force` 也不会覆盖第三方 runner。合法的第三方 hook 数组条目会原样保留，只替换与安装器生成的 runner、Agent、事件和失败兜底完整匹配的 Harness 命令；仅仅在注释里出现 marker 不算我们的 Hook。
 
-Codex linked-worktree 是一个受限例外：项目文件仍按上述事务写入，之后才以 compare-and-swap 方式更新 `$CODEX_HOME/hooks.json` 的两条精确 managed 入口和版本化、兼容 Node 18 的分发器，最后把当前 worktree 的登记以 `0600` 写进其私有 Git admin dir。其他用户 Hook 条目的语义内容与相对顺序保持不变；未登记仓库静默不执行，登记存在但路径、权限、runner hash 或配置不一致则 fail closed。未知 JSON、同名外来分发器、并发修改都会让安装失败，且登记最后写入，因此不会留下“看似激活”的半套状态。这不是原生 Git hook，也不会影响其他 worktree 的业务文件。
+Codex linked-worktree 是一个受限例外：项目文件仍按上述事务写入，之后才以 compare-and-swap 方式更新 Codex 的**用户 Hook 源配置**，加入两条精确 managed 入口和版本化、兼容 Node 18 的分发器，最后把当前 worktree 的登记以 `0600` 写进其私有 Git admin dir。普通 Codex 的源配置就是当前 `$CODEX_HOME`（未设置时为 `~/.codex`）；Orca 的 `$CODEX_HOME` 是每次创建终端时由 `~/.codex` 派生的运行时副本，因此安装器会自动写 `~/.codex` 源配置，并要求新建一次 Orca Agent 会话让它安全同步。Harness 不改 Orca 的生成脚本、当前运行时文件或 Hook 信任记录。其他用户 Hook 条目的语义内容与相对顺序保持不变；未登记仓库静默不执行，登记存在但路径、权限、runner hash 或配置不一致则 fail closed。未知 JSON、同名外来分发器、并发修改都会让安装失败，且登记最后写入，因此不会留下“看似激活”的半套状态。这不是原生 Git hook，也不会影响其他 worktree 的业务文件。
 
 `evidence` 不是旧绿灯截图：每次读取都会重新核对当前代码，代码一变就标 `stale` 并返回失败。手动执行时，`run-checks` 只会得到 `runChecksValid`；随后对同一代码运行 `verify`，整体 `valid` 才会变成 true。若会话开始时工作区已经有未提交改动，门禁会把这些既有改动也纳入验收范围，并在 evidence 里列出；它保证不漏，不冒充精确的任务归因。
 

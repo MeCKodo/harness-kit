@@ -38,6 +38,7 @@ export interface CodexLinkedInstallPlan {
   repoRoot: string;
   gitDir: string;
   codexHome: string;
+  requiresRuntimeRefresh: boolean;
   userTargets: readonly ManagedFileTarget[];
   registrationTarget: ManagedFileTarget;
   userInspections: readonly ManagedFileInspection[];
@@ -47,6 +48,11 @@ export interface CodexLinkedInstallPlan {
 export interface CodexLinkedInstallTestHooks {
   beforeUserTransaction?: () => void;
   beforeRegistrationTransaction?: () => void;
+}
+
+export interface CodexLinkedPrepareOptions {
+  env?: NodeJS.ProcessEnv;
+  homeDir?: string;
 }
 
 export interface CodexLinkedInspection {
@@ -69,12 +75,35 @@ function inside(root: string, candidate: string): boolean {
   return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
-function resolveCodexHome(): string {
-  const requested = resolve(process.env.CODEX_HOME ?? join(homedir(), ".codex"));
+function ensureCodexHome(requestedInput: string, label: string): string {
+  const requested = resolve(requestedInput);
   mkdirSync(requested, { recursive: true, mode: 0o700 });
   const resolved = realpathSync(requested);
-  if (!statSync(resolved).isDirectory()) throw new Error(`CODEX_HOME is not a directory: ${requested}`);
+  if (!statSync(resolved).isDirectory()) throw new Error(`${label} is not a directory: ${requested}`);
   return resolved;
+}
+
+function resolveCodexHookSourceHome(
+  options: CodexLinkedPrepareOptions = {},
+): { codexHome: string; requiresRuntimeRefresh: boolean } {
+  const env = options.env ?? process.env;
+  const userHome = options.homeDir ?? homedir();
+  const runtimeHome = ensureCodexHome(env.CODEX_HOME ?? join(userHome, ".codex"), "CODEX_HOME");
+  const orcaRuntimeHome = env.ORCA_CODEX_HOME?.trim();
+
+  // Orca regenerates its runtime CODEX_HOME from the user's system Codex home
+  // when a terminal starts. Install into that source so the managed entry is
+  // mirrored into future runtimes instead of being lost on the next refresh.
+  if (
+    env.ORCA_WORKTREE_ID?.trim() &&
+    orcaRuntimeHome &&
+    canonical(resolve(orcaRuntimeHome)) === runtimeHome
+  ) {
+    const codexHome = ensureCodexHome(join(userHome, ".codex"), "Codex system hook source home");
+    return { codexHome, requiresRuntimeRefresh: codexHome !== runtimeHome };
+  }
+
+  return { codexHome: runtimeHome, requiresRuntimeRefresh: false };
 }
 
 function shellQuote(value: string): string {
@@ -124,9 +153,10 @@ function parseObjectJson(raw: string | null, label: string): Record<string, unkn
 }
 
 function renderUserHooks(current: string | null, codexHome: string): string {
-  const json = parseObjectJson(current, "$CODEX_HOME/hooks.json");
+  const hooksPath = join(codexHome, USER_HOOKS_REL);
+  const json = parseObjectJson(current, hooksPath);
   if (json.hooks !== undefined && (!json.hooks || typeof json.hooks !== "object" || Array.isArray(json.hooks))) {
-    throw new Error("$CODEX_HOME/hooks.json hooks must be an object; refusing to replace an unknown existing shape");
+    throw new Error(`${hooksPath} hooks must be an object; refusing to replace an unknown existing shape`);
   }
   const hooks = (json.hooks as Record<string, unknown> | undefined) ?? {};
   for (const [jsonEvent, semanticEvent] of [
@@ -134,7 +164,7 @@ function renderUserHooks(current: string | null, codexHome: string): string {
     ["Stop", "stop"],
   ] as const) {
     if (hooks[jsonEvent] !== undefined && !Array.isArray(hooks[jsonEvent])) {
-      throw new Error(`$CODEX_HOME/hooks.json hooks.${jsonEvent} must be an array; refusing to replace an unknown existing shape`);
+      throw new Error(`${hooksPath} hooks.${jsonEvent} must be an array; refusing to replace an unknown existing shape`);
     }
     const existing = Array.isArray(hooks[jsonEvent]) ? (hooks[jsonEvent] as unknown[]) : [];
     for (const group of existing) {
@@ -145,7 +175,7 @@ function renderUserHooks(current: string | null, codexHome: string): string {
         (group as { _harnessKit?: unknown })._harnessKit === DISPATCH_ID &&
         !isExactManagedUserGroup(group, codexHome, semanticEvent)
       ) {
-        throw new Error(`$CODEX_HOME/hooks.json contains a foreign or changed ${DISPATCH_ID} ${jsonEvent} group`);
+        throw new Error(`${hooksPath} contains a foreign or changed ${DISPATCH_ID} ${jsonEvent} group`);
       }
     }
     hooks[jsonEvent] = [
@@ -329,11 +359,15 @@ try {
 `;
 }
 
-export function prepareCodexLinkedInstall(repoInput: string, runnerContent: string): CodexLinkedInstallPlan {
+export function prepareCodexLinkedInstall(
+  repoInput: string,
+  runnerContent: string,
+  options: CodexLinkedPrepareOptions = {},
+): CodexLinkedInstallPlan {
   const repoRoot = canonical(gitRoot(repoInput));
   if (!isLinkedGitWorktree(repoRoot)) throw new Error("Codex user dispatcher is only valid for a Git linked worktree");
   const gitDir = canonical(gitAdminDir(repoRoot));
-  const codexHome = resolveCodexHome();
+  const { codexHome, requiresRuntimeRefresh } = resolveCodexHookSourceHome(options);
   const dispatcher = installedCodexDispatcherProgram();
 
   const initialUser = inspectManagedFiles(codexHome, [
@@ -382,6 +416,7 @@ export function prepareCodexLinkedInstall(repoInput: string, runnerContent: stri
     repoRoot,
     gitDir,
     codexHome,
+    requiresRuntimeRefresh,
     userTargets,
     registrationTarget,
     userInspections,
@@ -460,7 +495,7 @@ export function inspectCodexLinkedHooks(repoInput: string): CodexLinkedInspectio
   if (dispatcherFile.content !== expectedDispatcher) issues.push("Codex linked dispatcher is missing or changed");
   if (dispatcherFile.mode !== 0o700) issues.push("Codex linked dispatcher permissions are not 0700");
   if (dispatcherFile.content !== null) {
-    artifacts.push({ path: "$CODEX_HOME/" + DISPATCHER_REL, content: dispatcherFile.content, mode: dispatcherFile.mode });
+    artifacts.push({ path: "$CODEX_HOOK_SOURCE/" + DISPATCHER_REL, content: dispatcherFile.content, mode: dispatcherFile.mode });
   }
 
   const userHooksFile = safeContent(registration.codexHome, USER_HOOKS_REL, issues);
@@ -468,7 +503,7 @@ export function inspectCodexLinkedHooks(repoInput: string): CodexLinkedInspectio
     issues.push("Codex user hooks.json is missing");
   } else {
     try {
-      const json = parseObjectJson(userHooksFile.content, "$CODEX_HOME/hooks.json");
+      const json = parseObjectJson(userHooksFile.content, join(registration.codexHome, USER_HOOKS_REL));
       const hooks = json.hooks as Record<string, unknown> | undefined;
       const start = Array.isArray(hooks?.SessionStart)
         ? hooks!.SessionStart.find((group) => isExactManagedUserGroup(group, registration.codexHome, "session-start"))
@@ -477,7 +512,7 @@ export function inspectCodexLinkedHooks(repoInput: string): CodexLinkedInspectio
         ? hooks!.Stop.find((group) => isExactManagedUserGroup(group, registration.codexHome, "stop"))
         : undefined;
       if (!start || !stop) issues.push("Codex user hooks.json does not contain both exact Harness dispatcher hooks");
-      else artifacts.push({ path: "$CODEX_HOME/hooks.json#harness-kit", content: JSON.stringify({ start, stop }) });
+      else artifacts.push({ path: "$CODEX_HOOK_SOURCE/hooks.json#harness-kit", content: JSON.stringify({ start, stop }) });
     } catch (error) {
       issues.push((error as Error).message);
     }

@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -85,6 +86,42 @@ test("does not mistake a Git submodule for a linked worktree", () => {
   assert.equal(isLinkedGitWorktree(join(parent, "vendor", "child")), false);
 });
 
+test("Orca installs into the system Codex source home instead of its generated runtime home", () => {
+  const fixture = linkedFixture();
+  const fakeHome = mkdtempSync(join(tmpdir(), "hk-codex-orca-system-home-"));
+  const systemCodexHome = join(fakeHome, ".codex");
+  const runtimeCodexHome = mkdtempSync(join(tmpdir(), "hk-codex-orca-runtime-home-"));
+  mkdirSync(systemCodexHome, { recursive: true });
+  const runtimeBytes = JSON.stringify({ runtimeOwned: true }) + "\n";
+  writeFileSync(join(runtimeCodexHome, "hooks.json"), runtimeBytes);
+  writeFileSync(
+    join(systemCodexHome, "hooks.json"),
+    JSON.stringify({ hooks: { SessionStart: [{ _foreign: "system", hooks: [] }], Stop: [] } }) + "\n",
+  );
+
+  const plan = prepareCodexLinkedInstall(fixture.linked, fixture.runner, {
+    env: {
+      ...process.env,
+      CODEX_HOME: runtimeCodexHome,
+      ORCA_CODEX_HOME: runtimeCodexHome,
+      ORCA_WORKTREE_ID: "repo::worktree",
+    },
+    homeDir: fakeHome,
+  });
+  assert.equal(plan.codexHome, realpathSync(systemCodexHome));
+  assert.equal(plan.requiresRuntimeRefresh, true);
+  commitCodexLinkedInstall(plan);
+
+  assert.equal(readFileSync(join(runtimeCodexHome, "hooks.json"), "utf8"), runtimeBytes);
+  const sourceHooks = JSON.parse(readFileSync(join(systemCodexHome, "hooks.json"), "utf8"));
+  assert.equal(sourceHooks.hooks.SessionStart[0]._foreign, "system");
+  assert.equal(sourceHooks.hooks.SessionStart.at(-1)._harnessKit, "codex-linked-dispatch-v1");
+  assert.equal(
+    JSON.parse(readFileSync(registrationPath(fixture.linked), "utf8")).codexHome,
+    realpathSync(systemCodexHome),
+  );
+});
+
 test("installs one inert user dispatcher and routes only a registered linked worktree", () => {
   const fixture = linkedFixture();
   const foreignStart = { _foreign: true, hooks: [{ type: "command", command: "echo foreign-start" }] };
@@ -95,6 +132,7 @@ test("installs one inert user dispatcher and routes only a registered linked wor
 
   withCodexHome(fixture.codexHome, () => {
     const plan = prepareCodexLinkedInstall(fixture.linked, fixture.runner);
+    assert.equal(plan.requiresRuntimeRefresh, false);
     commitCodexLinkedInstall(plan);
     const again = prepareCodexLinkedInstall(fixture.linked, fixture.runner);
     commitCodexLinkedInstall(again);

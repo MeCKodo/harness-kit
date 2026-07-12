@@ -17,6 +17,11 @@ test("the repository impact map keeps Codex linked hooks with their focused test
   assert.ok(module);
   assert.ok(module.owns?.includes("src/codex-linked-hooks.ts"));
   assert.ok(module.tests?.includes("test/codex-linked-hooks.test.ts"));
+  assert.ok(
+    module.pitfalls?.some((pitfall) =>
+      /Orca.*CODEX_HOME.*生成态.*~\/.codex.*不能补丁运行时 hooks.*trust/.test(pitfall),
+    ),
+  );
 });
 
 test("an unknown manifest spec is rejected instead of being interpreted as v0", () => {
