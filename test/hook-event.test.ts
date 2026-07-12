@@ -176,6 +176,45 @@ test("SessionStart preserves the exact base, committed changes are checked, and 
   assert.equal(inspectAgentHookStatus(repo).state, "degraded");
 });
 
+test("Codex linked dispatcher blocks Stop when its effective configuration changes after SessionStart", () => {
+  const main = fixture();
+  const linked = join(mkdtempSync(join(tmpdir(), "hk-hook-event-linked-parent-")), "linked");
+  execFileSync("git", ["worktree", "add", "-q", "--detach", linked, "HEAD"], { cwd: main });
+  const codexHome = mkdtempSync(join(tmpdir(), "hk-hook-event-codex-home-"));
+  const previous = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = codexHome;
+  try {
+    assert.equal(
+      installHooksCmd(linked, { stop: true, agents: ["codex"], allowUserDispatcher: true }),
+      0,
+    );
+    const dispatcher = join(codexHome, "harness-kit", "codex-linked-dispatch-v1.cjs");
+    const env = { ...process.env, HARNESS_KIT_CMD: `${TSX} ${CLI}` };
+    const payload = JSON.stringify({ session_id: "linked-session" });
+    const start = spawnSync(process.execPath, [dispatcher, "session-start"], {
+      cwd: linked,
+      input: payload,
+      encoding: "utf8",
+      env,
+    });
+    assert.equal(start.status, 0, start.stderr);
+
+    writeFileSync(dispatcher, readFileSync(dispatcher, "utf8") + "// changed after SessionStart\n");
+    const stop = spawnSync(process.execPath, [dispatcher, "stop"], {
+      cwd: linked,
+      input: payload,
+      encoding: "utf8",
+      env,
+    });
+    assert.equal(stop.status, 0, stop.stderr);
+    assert.equal(JSON.parse(stop.stdout).decision, "block");
+    assert.match(JSON.parse(stop.stdout).reason, /configuration changed after SessionStart/);
+  } finally {
+    if (previous === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previous;
+  }
+});
+
 test("a hung verify contract is timed out early enough to return the client's blocking protocol", () => {
   const repo = fixture(`${MANIFEST}
 contracts:

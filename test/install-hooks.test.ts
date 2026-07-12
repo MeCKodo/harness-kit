@@ -304,6 +304,39 @@ test("Codex linked-worktree fallback installs project files, user dispatcher, an
   }
 });
 
+test("Codex linked-worktree ACTIVE binds the dispatcher but ignores unrelated user hooks", () => {
+  const main = freshRepo();
+  const linked = addLinkedWorktree(main);
+  const codexHome = mkdtempSync(join(tmpdir(), "hk-hooks-codex-home-"));
+  const previous = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = codexHome;
+  try {
+    assert.equal(
+      installHooksCmd(linked, { stop: true, agents: ["codex"], allowUserDispatcher: true }),
+      0,
+    );
+    recordCurrentHookEvidence(linked, "codex");
+    assert.equal(inspectAgentHookStatus(linked).state, "active");
+    const bound = agentHookConfigurationFingerprint(linked, "codex");
+
+    const userHooksPath = join(codexHome, "hooks.json");
+    const userHooks = JSON.parse(readFileSync(userHooksPath, "utf8"));
+    userHooks.hooks.SessionStart.unshift({ _foreign: true, hooks: [{ type: "command", command: "echo unrelated" }] });
+    writeFileSync(userHooksPath, JSON.stringify(userHooks, null, 2) + "\n");
+    assert.equal(agentHookConfigurationFingerprint(linked, "codex"), bound);
+    assert.equal(inspectAgentHookStatus(linked).state, "active");
+
+    const dispatcher = join(codexHome, "harness-kit", "codex-linked-dispatch-v1.cjs");
+    writeFileSync(dispatcher, readFileSync(dispatcher, "utf8") + "// tampered\n");
+    const degraded = inspectAgentHookStatus(linked);
+    assert.equal(degraded.state, "degraded");
+    assert.ok(degraded.issues.some((issue) => /dispatcher|configuration/i.test(issue)));
+  } finally {
+    if (previous === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previous;
+  }
+});
+
 test("install-hooks --stop writes a pinned shared runner + SessionStart/Stop hooks per agent tool", () => {
   const dir = freshRepo();
   assert.equal(installHooksCmd(dir, { stop: true }), 0);

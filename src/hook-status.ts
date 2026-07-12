@@ -1,5 +1,6 @@
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
+import { inspectCodexLinkedHooks, isLinkedGitWorktree } from "./codex-linked-hooks";
 import { collectChanges, EMPTY_TREE_BASE } from "./git";
 import { inspectManagedFiles } from "./managed-files";
 import { readLatestHookValidationSession } from "./validation-state";
@@ -147,6 +148,7 @@ export function agentHookConfigurationFingerprint(repo: string, agent: AgentTool
   const issues: string[] = [];
   if (!runnerReady(repo, issues)) return null;
   let configured = false;
+  let linkedArtifacts: Array<{ path: string; content: string; mode?: number }> = [];
   const rels = [RUNNER_REL];
   if (agent === "claude") {
     configured = groupStyleConfigured(repo, ".claude/settings.json", "claude", issues);
@@ -155,7 +157,14 @@ export function agentHookConfigurationFingerprint(repo: string, agent: AgentTool
     configured = cursorConfigured(repo, issues);
     rels.push(".cursor/hooks.json");
   } else {
-    configured = groupStyleConfigured(repo, ".codex/hooks.json", "codex", issues) && codexFeatureEnabled(repo, issues);
+    const projectConfigured = groupStyleConfigured(repo, ".codex/hooks.json", "codex", issues) && codexFeatureEnabled(repo, issues);
+    if (projectConfigured && isLinkedGitWorktree(repo)) {
+      const linked = inspectCodexLinkedHooks(repo);
+      configured = linked.configured;
+      linkedArtifacts = linked.artifacts;
+    } else {
+      configured = projectConfigured;
+    }
     rels.push(".codex/hooks.json", ".codex/config.toml");
   }
   if (!configured) return null;
@@ -169,6 +178,7 @@ export function agentHookConfigurationFingerprint(repo: string, agent: AgentTool
       ...(rel === RUNNER_REL ? { mode: lstatSync(join(repo, rel)).mode & 0o7777 } : {}),
     });
   }
+  artifacts.push(...linkedArtifacts);
   return sha256(JSON.stringify({ agent, artifacts }));
 }
 
@@ -180,9 +190,17 @@ export function inspectAgentHookStatus(repo: string): AgentHookStatus {
   if (groupStyleConfigured(repo, ".claude/settings.json", "claude", issues)) configuredAgents.push("claude");
   if (cursorConfigured(repo, issues)) configuredAgents.push("cursor");
   const codexGroup = groupStyleConfigured(repo, ".codex/hooks.json", "codex", issues);
-  if (codexGroup && codexFeatureEnabled(repo, issues)) configuredAgents.push("codex");
+  if (codexGroup && codexFeatureEnabled(repo, issues)) {
+    if (isLinkedGitWorktree(repo)) {
+      const linked = inspectCodexLinkedHooks(repo);
+      issues.push(...linked.issues);
+      if (linked.configured) configuredAgents.push("codex");
+    } else {
+      configuredAgents.push("codex");
+    }
+  }
 
-  if (!configuredAgents.length) issues.push("no complete project-local Agent SessionStart + Stop hook pair is configured");
+  if (!configuredAgents.length) issues.push("no complete effective Agent SessionStart + Stop hook pair is configured");
 
   let evidenceAgent: AgentTool | undefined;
   let evidenceAt: string | undefined;
@@ -231,7 +249,10 @@ export function inspectAgentHookStatus(repo: string): AgentHookStatus {
     issue.includes("is missing while") ||
     issue.includes("not a safe project-local regular file") ||
     issue.includes("not a managed executable") ||
-    issue.includes("runner is missing"),
+    issue.includes("runner is missing") ||
+    issue.includes("Codex linked") ||
+    issue.includes("Codex user hooks.json") ||
+    issue.includes("$CODEX_HOME"),
   );
   if (!structurallyReady || evidenceInvalid) {
     return { state: "degraded", configuredAgents, ...(evidenceAgent ? { evidenceAgent, evidenceAt } : {}), issues };
