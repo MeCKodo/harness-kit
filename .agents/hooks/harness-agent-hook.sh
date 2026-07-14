@@ -29,7 +29,7 @@ if [ -n "${HARNESS_KIT_CMD:-}" ]; then
 else
   # Resolve the pinned package outside the target repository. npm otherwise
   # mistakes a same-named source checkout for the requested published package.
-  output=$(cd "${TMPDIR:-/tmp}" && npx -y @erzhe/harness-kit@0.4.0 hook-event --repo "$ROOT" --agent "$AGENT" --event "$EVENT")
+  output=$(cd "${TMPDIR:-/tmp}" && npx -y @erzhe/harness-kit@0.4.1 hook-event --repo "$ROOT" --agent "$AGENT" --event "$EVENT")
 fi
 code=$?
 [ "$code" -eq 0 ] || block_infrastructure_failure

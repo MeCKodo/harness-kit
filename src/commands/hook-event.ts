@@ -94,7 +94,15 @@ function failureMessage(report: RunChecksReport | null, verifyOutput: string, to
   if (!report) lines.push("run-checks did not return valid evidence.");
   else {
     for (const message of report.errors.slice(0, 5)) lines.push(`- ${message}`);
-    for (const failure of report.failed.slice(0, 5)) lines.push(`- check ${failure.id} failed (exit ${failure.code})`);
+    for (const failure of report.failed.slice(0, 5)) {
+      lines.push(`- check ${failure.id} failed (exit ${failure.code})`);
+      lines.push(`  run: ${failure.cmd}`);
+      const tail = failure.logTail.split("\n").filter(Boolean).slice(-5);
+      if (tail.length) {
+        lines.push("  output (tail):");
+        for (const line of tail) lines.push(`    ${line}`);
+      }
+    }
     for (const skipped of report.skipped.slice(0, 5)) lines.push(`- check ${skipped.id} was not run: ${skipped.reason}`);
     for (const gap of report.gaps.filter((item) => item.severity === "blocking").slice(0, 5))
       lines.push(`- [${gap.kind}] ${gap.where ? `${gap.where}: ` : ""}${gap.why}`);
@@ -203,7 +211,7 @@ export function hookEventCmd(repoInput: string, opts: HookEventOpts): number {
   }
   if (run.code === 0 && report?.ok && verifyPassed && evidencePersisted) return allow(opts.agent);
   const verifyDetails = [
-    verify.output.trim(),
+    verify.code === 0 ? "" : verify.output.trim(),
     finalFingerprintError,
     evidencePersisted ? "" : "matching final evidence was not persisted; refusing to allow Stop",
   ]
