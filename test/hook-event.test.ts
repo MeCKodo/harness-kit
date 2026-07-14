@@ -19,7 +19,7 @@ identity:
   summary: lifecycle hook fixture
 capabilities:
   test:
-    run: 'node -e "process.exit(process.env.HK_TEST_FAIL ? 1 : 0)"'
+    run: 'node -e "if (process.env.HK_TEST_FAIL) { console.error(process.env.HK_TEST_MESSAGE); process.exit(1) }"'
 modules:
   - name: core
     role: fixture code
@@ -123,10 +123,24 @@ test("SessionStart preserves the exact base, committed changes are checked, and 
   // original base must survive or the commit above would disappear.
   assert.equal(installedHook(repo, "codex", "session-start", payload).status, 0);
 
-  const failed = installedHook(repo, "codex", "stop", { ...payload, stop_hook_active: true }, { HK_TEST_FAIL: "1" });
+  const failed = installedHook(
+    repo,
+    "codex",
+    "stop",
+    { ...payload, stop_hook_active: true },
+    { HK_TEST_FAIL: "1", HK_TEST_MESSAGE: "backend assertion exploded" },
+  );
   assert.equal(failed.status, 0);
   assert.equal(JSON.parse(failed.stdout).decision, "block");
-  assert.match(JSON.parse(failed.stdout).reason, /check test failed/);
+  const failedReason = JSON.parse(failed.stdout).reason as string;
+  assert.match(failedReason, /check test failed/);
+  assert.match(failedReason, /run: node -e/, "Stop feedback must include the exact failing command");
+  assert.match(failedReason, /backend assertion exploded/, "Stop feedback must include the captured failure tail");
+  assert.doesNotMatch(
+    failedReason,
+    /Prove the lifecycle Hook in a fresh Agent session|verify: OK/,
+    "a successful internal verify must not leak its transient lifecycle-readiness warning into check failure feedback",
+  );
 
   const passed = installedHook(repo, "codex", "stop", { ...payload, stop_hook_active: true });
   assert.equal(passed.status, 0);
