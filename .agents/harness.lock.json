@@ -1,0 +1,9 @@
+{
+  "schema": "ai-harness/upgrade-state/v1",
+  "package": "@erzhe/harness-kit",
+  "version": "0.5.1",
+  "manifestSpec": "ai-harness/v0",
+  "appliedMigrations": [
+    "upgrade-state-v1"
+  ]
+}
