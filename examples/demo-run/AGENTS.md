@@ -11,10 +11,11 @@ TODO one-line description of what this repo is
 Before you touch code:
 1. Post a **Task Brief** in chat: what you'll change, which change-type it is, which layers/files it touches, and how you'll verify.
 2. Read the relevant files before editing. Do NOT full-repo grep and guess.
-   If lifecycle hooks are not active, record the task-start commit before editing so committed work can later be checked with `run-checks --base <sha>`.
+   Prefer `harness-kit task start` before editing so committed work stays in the deliver scope.
 
 Before you finish:
-3. Run `harness-kit run-checks` to verify THIS change (impact-driven) and `harness-kit verify` for drift/invariants. Treat blocking gaps as unfinished work — close them; only eligible coverage gaps may be waived with a scoped reason.
+3. Run `harness-kit deliver` (impact-driven checks + verify + stamp). Only `status=accepted` (or clean `no-change`) means the task is done. If `needs-work`, fix and re-run — do not claim completion without an accepted stamp.
+   Optional: `harness-kit task start` before editing so later commits stay in scope; without it, deliver falls back to the current worktree git diff vs HEAD.
 4. Read `NEXT ACTIONS` (or JSON `nextActions`): complete every `required | agent` action automatically before finishing; ask the user only for a `required | human` decision. Defer `recommended` maintenance during unrelated product work.
 5. **Never claim a check you didn't run.** Informational boundaries (packaging, real network, prod upload) are not failures; mention one only when it is relevant to this task.
 6. If you learned something an agent could not infer from code (a gotcha, a decision, a fix), update the registered knowledge source in place, or add new Harness-owned knowledge under `.agents/knowledge/` (a journal ADR for decisions). Never move/copy an existing repo document just to fit a folder name. Do NOT record one-off noise or anything already obvious from the code.

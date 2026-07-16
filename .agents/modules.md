@@ -64,7 +64,17 @@
 - Pitfall: waiver 只允许覆盖类 gap，且仅对同一 change fingerprint + gap kind + scope 生效，理由不能为空
 - Pitfall: evidence 读取时必须重算代码与 validation-plan fingerprint；代码、policy/planner 变化或旧证据缺少计划绑定都必须 stale + 非零退出
 - Pitfall: 手动 evidence 的整体 valid 也要求同指纹 verifyPassed，run-checks 单独通过只算 runChecksValid
-- Pitfall: 无 lifecycle session 时，隐式 HEAD 的 no-change 不能证明已 commit 的任务；手动验收必须传 task-start base
+- Pitfall: 任务验收优先用 deliver；隐式 HEAD 的 no-change 不能证明已 commit 任务范围，应用 task start / --base
+
+## delivery — 任务 scope 解析、deliver 编排与 delivery stamp
+- Entry: `src/delivery.ts`, `src/commands/deliver.ts`
+- Owns (prod): `src/delivery.ts`, `src/commands/deliver.ts`, `src/commands/task.ts`
+- Tests: `test/delivery.test.ts`
+- Checks: `test`, `typecheck`
+- Test touch: `required`
+- Pitfall: 改动范围：task/--base 优先，否则降级 worktree vs HEAD；禁止默认 merge-base origin/main
+- Pitfall: deliver 路径 budgetMs=0（长跑允许）；mutating/background 仍 fail closed
+- Pitfall: stamp 只写 Git admin 私有状态，读取时必须 freshness 重算
 
 ## agent-hooks — Claude Code / Cursor / Codex 的 SessionStart + Stop 生命周期门禁
 - Entry: `src/commands/hook-event.ts`
@@ -73,8 +83,8 @@
 - Checks: `test`, `typecheck`
 - Test touch: `required`
 - Pitfall: Claude/Codex 用 stdout JSON decision=block；Cursor 用 stdout JSON followup_message
-- Pitfall: stop_hook_active 不是跳过验证的理由，每次结束尝试都重新检查
-- Pitfall: run-checks 7 分钟 + verify 2 分钟必须小于客户端 10 分钟 hook 上限，超时要来得及返回 blocking 协议
+- Pitfall: Stop 默认 thin（查 stamp），HARNESS_KIT_STOP_MODE=execute 才内嵌重跑；禁止因缺 SessionStart 要求新会话
+- Pitfall: execute 模式若在 hook 内跑 verify，预算需小于客户端 hook 超时
 - Pitfall: Codex linked worktree 必须显式安装用户分发器 fallback；无登记 silent no-op，有登记但路径/权限/runner hash 不一致则 fail closed
 - Pitfall: linked worktree 只能有一条 Harness 生命周期路径；安装时移除自己的项目 Hook、保留第三方项目 Hook，状态发现双路径必须 DEGRADED
 - Pitfall: linked worktree 要比较 canonical git-dir 与 git-common-dir，不能把同样使用 .git 文件的 submodule 误判为 linked

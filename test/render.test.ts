@@ -126,14 +126,15 @@ test("modules.md renders impact fields and the project-defined validation gate c
   assert.match(modulesMd, /Acceptance test touch:.*required/);
 });
 
-test("AGENTS.md points to run-checks + check-loop only when an impact map exists", () => {
+test("AGENTS.md always points to deliver; impact map adds stamp/task-start detail", () => {
   const withoutMap = renderAgentsMd(base);
-  assert.doesNotMatch(withoutMap, /run-checks/);
+  assert.match(withoutMap, /harness-kit deliver/);
 
   const withMap = renderAgentsMd({
     ...base,
     modules: [{ name: "api", role: "r", entry: ["src/a.ts"], owns: ["src/api/**"], checks: ["test"] }],
   });
-  assert.match(withMap, /run-checks/);
-  assert.match(withMap, /check-loop/);
+  assert.match(withMap, /harness-kit deliver/);
+  assert.match(withMap, /status=accepted/);
+  assert.match(withMap, /task start/);
 });

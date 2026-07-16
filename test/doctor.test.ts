@@ -56,9 +56,10 @@ invariants:
   assert.match(result.output, /knowledge: engineering\/handbook\/api\.md/);
   assert.doesNotMatch(result.output, /passes without checking anything/);
   assert.match(result.output, /Agent lifecycle hooks[\s\S]*DEGRADED/);
-  assert.match(result.output, /NEXT ACTIONS[\s\S]*\[REQUIRED \| AGENT\] Install the Agent lifecycle Hook/);
+  assert.match(result.output, /NEXT ACTIONS[\s\S]*nothing required now/);
+  assert.match(result.output, /recommended maintenance action/);
   assert.match(result.output, /doctor: repository configuration healthy/);
-  assert.match(result.output, /Harness readiness: INCOMPLETE/);
+  assert.match(result.output, /Harness readiness: READY/);
 });
 
 test("doctor keeps informational boundaries compact and expands maintenance work on request", () => {

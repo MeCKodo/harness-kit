@@ -61,20 +61,30 @@ npx -y @erzhe/harness-kit@0.5.1 upgrade --repo .
 
 ---
 
-## 接入之后：自动防腐烂，人只 review
+## 接入之后：编码 → 验收 Loop
 
-harness-kit 的长期价值不在首次接入，而在**代码演进时上下文不腐烂**——而且这件事不该靠人记命令：
+任务验收入口是 **一条命令**：
 
-- **Agent 钩子是交付闭环**：SessionStart 记住任务起点，Stop 让 Claude Code / Cursor / Codex 在结束前真正跑本次改动对应的检查。`doctor` 会显示 `CONFIGURED / ACTIVE / DEGRADED`，避免“文件装了但客户端没执行”被误报成成功。
-- **Git 钩子是可选增强**：它可能影响 linked worktree 或覆盖第三方工具，因此默认只在单 worktree、默认 hooks 路径、无外来 hook 时安装；冲突时拒绝写入并给出路径，不自动 merge。
-- **漂移了让 Agent 自愈**：知识过期 / 接口契约变了，把仓库丢给 Agent 说一句 `onboard`，它会照 skill 自动考古、改 manifest/knowledge、有据才 accept 契约，最后**产出一份变更清单**。
-- **你只做一个动作**：审查那份 diff，批准或打回。生产和更新都交给 Agent，人只 review。
-
+```bash
+harness-kit task start --repo .   # 可选；记住任务起点，覆盖之后的 commit
+# ... Agent 写代码 ...
+harness-kit deliver --repo .      # 影响面检查 + verify + stamp
 ```
-代码演进 → [hook/CI] verify 红灯，指出哪块过期/哪个契约变了
-        → [Agent] 自动修 + 产出变更清单
-        → [你] review：批准 or 打回      ← 唯一的人工动作
-```
+
+- **有 task base / `--base`**：按任务范围 diff 验收（含已提交改动）
+- **没有**：降级为**当前工作区 git diff（相对 HEAD）**，对这些文件跑测
+- **干净工作区**：`no-change`（不假装验过历史 commit）
+- **复杂任务允许长跑**：`deliver` 不用 7 分钟总预算卡死测试
+
+Stop Hook（可选）默认 **thin**：没有匹配的 delivery stamp 就 block，并提示跑 `deliver`——**不再要求新开会话**。  
+`HARNESS_KIT_STOP_MODE=execute` 可恢复 Stop 内直接重跑验收。
+
+诚实边界：没有宿主 Stop / Supervisor 时，会话级强制 Loop 做不到；此时靠 AGENTS 协议 + `deliver` +（可选）Git/CI。Hook 观测（`CONFIGURED/ACTIVE`）是旁路，不是交付成功标准。
+
+其它：
+
+- **Git 钩子是可选增强**：默认只在单 worktree、默认 hooks 路径、无外来 hook 时安装。
+- **漂移了让 Agent 自愈**：`onboard` skill + `sync` / `record-context-review`。
 
 ---
 
@@ -86,6 +96,8 @@ harness-kit 的长期价值不在首次接入，而在**代码演进时上下文
 | `harness-kit init` | 铺 `.agents/` 骨架 + 空白 manifest |
 | `harness-kit sync` | manifest → 事务生成 AGENTS.md / CLAUDE.md / reference / routing / modules；不刷新知识复核 |
 | `harness-kit upgrade [--check] [--json]` | 把仓库原地升级到当前运行 CLI 版本；确定性迁移 + 生成物刷新 + doctor/verify，不访问 registry/CI/代码托管，也不改 Hook |
+| `harness-kit task-start` | 记录本 worktree 任务 base（可选；SessionStart 也会写） |
+| `harness-kit deliver` | **任务验收入口**：scope → run-checks + verify → stamp |
 | `harness-kit prepare-adoption` | 在仓外生成私有 blind-audit bundle；包含旧入口、嵌套 AGENTS/CLAUDE 及它们显式引用的文档证据和确定性候选，不改仓内文件 |
 | `harness-kit record-adoption-audit` | 把声明的 pass/fail、理由和审计报告 hash 绑定到一版候选 |
 | `harness-kit sync --adopt-existing --candidate ... --audit ...` | 首次接管：只有 live legacy、候选、manifest 和 pass receipt 逐字节一致才事务写入 |

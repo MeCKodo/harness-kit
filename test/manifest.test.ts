@@ -440,3 +440,4 @@ test("validation gates cannot be dead configuration", () => {
   assert.ok(errors.some((message) => /validation gate orphan-check-only 未被任何 module\.gates 引用/.test(message)));
   assert.ok(errors.some((message) => /validation gate orphan 未被任何 module\.gates 引用/.test(message)));
 });
+

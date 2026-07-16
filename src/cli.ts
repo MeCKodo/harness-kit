@@ -18,6 +18,8 @@ import { recordContextReviewCmd } from "./commands/record-context-review";
 import { prepareAdoptionCmd } from "./commands/prepare-adoption";
 import { recordAdoptionAuditCmd } from "./commands/record-adoption-audit";
 import { upgradeCmd } from "./commands/upgrade";
+import { deliverCmd } from "./commands/deliver";
+import { taskStartCmd, taskStatusCmd } from "./commands/task";
 import { ALL_AGENTS, type AgentTool } from "./commands/stop-hooks";
 
 function guard(fn: () => void | number): void {
@@ -134,6 +136,39 @@ program
   .action((o) => guard(() => planChecksCmd(repoOf(o), { base: o.base, json: o.json, profile: o.profile })));
 
 program
+  .command("task")
+  .description("manage the worktree task base used by deliver (optional; SessionStart also sets it)")
+  .option("-C, --repo <dir>", "target repo dir (default: current directory)")
+  .option("--json", "machine-readable output", false)
+  .action((o) => guard(() => taskStatusCmd(repoOf(o), { json: o.json })));
+
+program
+  .command("task-start")
+  .description("record task-start base SHA for this worktree so deliver covers later commits")
+  .option("-C, --repo <dir>", "target repo dir (default: current directory)")
+  .option("--base <ref>", "override base (default: current HEAD)")
+  .option("--note <text>", "optional task note")
+  .option("--json", "machine-readable output", false)
+  .action((o) => guard(() => taskStartCmd(repoOf(o), { base: o.base, note: o.note, json: o.json })));
+
+program
+  .command("deliver")
+  .description("accept this task change: resolve scope → run-checks + verify → stamp (preferred finish gate)")
+  .option("-C, --repo <dir>", "target repo dir (default: current directory)")
+  .option("--base <ref>", "explicit task base (overrides task record)")
+  .option("--profile <checkset>", "use a validation.checksets entry instead of per-module checks")
+  .option("--json", "machine-readable output", false)
+  .action((o) =>
+    guard(() =>
+      deliverCmd(repoOf(o), {
+        base: o.base,
+        profile: o.profile,
+        json: o.json,
+      }),
+    ),
+  );
+
+program
   .command("run-checks")
   .description("plan + run resolved checks; record evidence; nonzero on failure/unresolved blocking gap")
   .option("-C, --repo <dir>", "target repo dir (default: current directory)")
@@ -160,7 +195,7 @@ program
 
 program
   .command("evidence")
-  .description("show the latest durable run-checks evidence for this worktree/session")
+  .description("show the latest durable delivery stamp / run-checks evidence for this worktree/session")
   .option("-C, --repo <dir>", "target repo dir (default: current directory)")
   .option("--session <token>", "specific validation session token")
   .option("--json", "machine-readable output", false)

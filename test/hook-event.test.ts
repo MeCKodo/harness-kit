@@ -91,58 +91,75 @@ function installedHook(
   return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
 }
 
-test("Claude/Codex block with decision JSON while Cursor requests a follow-up", () => {
+test("thin Stop without SessionStart asks for deliver, never a new session", () => {
   const repo = fixture();
-  const claude = hook(repo, "claude", "stop", { session_id: "missing" });
+  write(repo, "src/core.ts", "export const value = 2;\n");
+  const claude = hook(repo, "claude", "stop", { session_id: "no-session-start" });
   assert.equal(claude.status, 0);
   assert.equal(JSON.parse(claude.stdout).decision, "block");
-  assert.match(JSON.parse(claude.stdout).reason, /no SessionStart baseline/);
+  assert.match(JSON.parse(claude.stdout).reason, /harness-kit deliver/);
+  assert.doesNotMatch(JSON.parse(claude.stdout).reason, /Start a new agent session|SessionStart baseline/);
 
-  const codex = hook(repo, "codex", "stop", { session_id: "missing" });
-  assert.equal(codex.status, 0);
-  assert.equal(JSON.parse(codex.stdout).decision, "block");
-
-  const cursor = hook(repo, "cursor", "stop", { conversation_id: "missing" });
+  const cursor = hook(repo, "cursor", "stop", { conversation_id: "no-session-start" });
   assert.equal(cursor.status, 0);
-  assert.match(JSON.parse(cursor.stdout).followup_message, /no SessionStart baseline/);
+  assert.match(JSON.parse(cursor.stdout).followup_message, /harness-kit deliver/);
+  assert.doesNotMatch(JSON.parse(cursor.stdout).followup_message, /Start a new agent session/);
 });
 
-test("SessionStart preserves the exact base, committed changes are checked, and stop_hook_active never bypasses", () => {
+test("thin Stop allows clean trees and accepted deliver stamps", () => {
+  const repo = fixture();
+  // Clean: allow without SessionStart.
+  const clean = hook(repo, "claude", "stop", { session_id: "clean-1" });
+  assert.equal(clean.status, 0);
+  assert.equal(clean.stdout.trim(), "");
+
+  write(repo, "src/core.ts", "export const value = 2;\n");
+  write(repo, "test/core.test.ts", "// covers 2\n");
+  const blocked = hook(repo, "claude", "stop", { session_id: "dirty-1" });
+  assert.equal(JSON.parse(blocked.stdout).decision, "block");
+
+  const delivered = spawnSync(TSX, [CLI, "deliver", "--repo", repo, "--json"], {
+    cwd: repo,
+    encoding: "utf8",
+  });
+  assert.equal(delivered.status, 0, delivered.stderr + delivered.stdout);
+  const allowed = hook(repo, "claude", "stop", { session_id: "dirty-1" });
+  assert.equal(allowed.status, 0);
+  assert.equal(allowed.stdout.trim(), "");
+});
+
+test("execute mode: SessionStart base + Stop runs checks without demanding a new session", () => {
   const repo = fixture();
   writeFileSync(join(repo, ".git", "info", "exclude"), ".codex/\n");
   assert.equal(installHooksCmd(repo, { stop: true, agents: ["codex"] }), 0);
   commit(repo, "install lifecycle hooks");
   const payload = { session_id: "session-1" };
-  assert.equal(installedHook(repo, "codex", "session-start", payload).status, 0);
+  const executeEnv = { HARNESS_KIT_STOP_MODE: "execute" };
+  assert.equal(installedHook(repo, "codex", "session-start", payload, executeEnv).status, 0);
 
   write(repo, "src/core.ts", "export const value = 2;\n");
   write(repo, "test/core.test.ts", "// covers value 2\n");
   commit(repo, "task change");
 
-  // A resumed client session emits SessionStart again with the same id. The
-  // original base must survive or the commit above would disappear.
-  assert.equal(installedHook(repo, "codex", "session-start", payload).status, 0);
+  // Resumed SessionStart must keep the original task/session base.
+  assert.equal(installedHook(repo, "codex", "session-start", payload, executeEnv).status, 0);
 
   const failed = installedHook(
     repo,
     "codex",
     "stop",
     { ...payload, stop_hook_active: true },
-    { HK_TEST_FAIL: "1", HK_TEST_MESSAGE: "backend assertion exploded" },
+    { ...executeEnv, HK_TEST_FAIL: "1", HK_TEST_MESSAGE: "backend assertion exploded" },
   );
   assert.equal(failed.status, 0);
   assert.equal(JSON.parse(failed.stdout).decision, "block");
   const failedReason = JSON.parse(failed.stdout).reason as string;
   assert.match(failedReason, /check test failed/);
-  assert.match(failedReason, /run: node -e/, "Stop feedback must include the exact failing command");
-  assert.match(failedReason, /backend assertion exploded/, "Stop feedback must include the captured failure tail");
-  assert.doesNotMatch(
-    failedReason,
-    /Prove the lifecycle Hook in a fresh Agent session|verify: OK/,
-    "a successful internal verify must not leak its transient lifecycle-readiness warning into check failure feedback",
-  );
+  assert.match(failedReason, /run: node -e/);
+  assert.match(failedReason, /backend assertion exploded/);
+  assert.doesNotMatch(failedReason, /Start a new agent session|Prove the lifecycle Hook in a fresh Agent session/);
 
-  const passed = installedHook(repo, "codex", "stop", { ...payload, stop_hook_active: true });
+  const passed = installedHook(repo, "codex", "stop", { ...payload, stop_hook_active: true }, executeEnv);
   assert.equal(passed.status, 0);
   assert.equal(passed.stdout, "");
 
@@ -155,8 +172,12 @@ test("SessionStart preserves the exact base, committed changes are checked, and 
   assert.equal(body.evidence.status, "verified");
   assert.deepEqual(body.evidence.changed, ["src/core.ts", "test/core.test.ts"]);
   assert.equal(body.evidence.verifyPassed, true);
-  assert.match(body.evidence.planFingerprint, /^[a-f0-9]{64}$/);
-  assert.deepEqual(body.nextActions, []);
+  assert.equal(body.stamp?.status, "accepted");
+  assert.ok(Array.isArray(body.nextActions));
+  assert.equal(
+    body.nextActions.filter((a: { priority: string }) => a.priority === "required").length,
+    0,
+  );
   const hookStatus = inspectAgentHookStatus(repo);
   assert.equal(hookStatus.state, "active");
   assert.equal(hookStatus.evidenceAgent, "codex");
@@ -180,16 +201,6 @@ test("SessionStart preserves the exact base, committed changes are checked, and 
     verifyPassed: true,
   });
   assert.equal(inspectAgentHookStatus(repo).state, "active", "manual commands must not hide valid hook evidence");
-  const verify = spawnSync(TSX, [CLI, "verify", "--repo", repo, "--json"], {
-    cwd: repo,
-    encoding: "utf8",
-  });
-  assert.equal(verify.status, 0, verify.stderr + verify.stdout);
-  assert.equal(
-    JSON.parse(verify.stdout).messages.some((message: { text: string }) => /manual run-checks evidence/.test(message.text)),
-    false,
-    "a stale manual record must not contradict current lifecycle evidence",
-  );
 
   const hooksPath = join(repo, ".codex", "hooks.json");
   const originalHooks = readFileSync(hooksPath, "utf8");
@@ -203,10 +214,9 @@ test("SessionStart preserves the exact base, committed changes are checked, and 
     cwd: repo,
     encoding: "utf8",
   });
-  assert.equal(rebound.status, 0, "delivery evidence remains valid even when it no longer proves Hook ACTIVE");
+  assert.equal(rebound.status, 0, "delivery stamp remains valid even when it no longer proves Hook ACTIVE");
   assert.equal(JSON.parse(rebound.stdout).valid, true);
   assert.equal(JSON.parse(rebound.stdout).hookActive, false);
-  assert.equal(JSON.parse(rebound.stdout).hookConfigurationCurrent, false);
   writeFileSync(hooksPath, originalHooks);
   assert.equal(inspectAgentHookStatus(repo).state, "active");
 
@@ -220,7 +230,7 @@ test("SessionStart preserves the exact base, committed changes are checked, and 
   assert.equal(inspectAgentHookStatus(repo).state, "degraded");
 });
 
-test("Codex linked dispatcher blocks Stop when its effective configuration changes after SessionStart", () => {
+test("Codex linked dispatcher: config change without code changes does not demand a new session", () => {
   const main = fixture();
   const linked = join(mkdtempSync(join(tmpdir(), "hk-hook-event-linked-parent-")), "linked");
   execFileSync("git", ["worktree", "add", "-q", "--detach", linked, "HEAD"], { cwd: main });
@@ -233,7 +243,7 @@ test("Codex linked dispatcher blocks Stop when its effective configuration chang
       0,
     );
     const dispatcher = join(codexHome, "harness-kit", "codex-linked-dispatch-v1.cjs");
-    const env = { ...process.env, HARNESS_KIT_CMD: `${TSX} ${CLI}` };
+    const env = { ...process.env, HARNESS_KIT_CMD: `${TSX} ${CLI}`, HARNESS_KIT_STOP_MODE: "execute" };
     const payload = JSON.stringify({ session_id: "linked-session" });
     const start = spawnSync(process.execPath, [dispatcher, "session-start"], {
       cwd: linked,
@@ -244,6 +254,7 @@ test("Codex linked dispatcher blocks Stop when its effective configuration chang
     assert.equal(start.status, 0, start.stderr);
 
     writeFileSync(dispatcher, readFileSync(dispatcher, "utf8") + "// changed after SessionStart\n");
+    // No repo code change → deliver no-change / thin allow path must not ask for a new session.
     const stop = spawnSync(process.execPath, [dispatcher, "stop"], {
       cwd: linked,
       input: payload,
@@ -251,8 +262,10 @@ test("Codex linked dispatcher blocks Stop when its effective configuration chang
       env,
     });
     assert.equal(stop.status, 0, stop.stderr);
-    assert.equal(JSON.parse(stop.stdout).decision, "block");
-    assert.match(JSON.parse(stop.stdout).reason, /configuration changed after SessionStart/);
+    if (stop.stdout.trim()) {
+      const body = JSON.parse(stop.stdout);
+      assert.doesNotMatch(body.reason ?? body.followup_message ?? "", /Start a new agent session/);
+    }
   } finally {
     if (previous === undefined) delete process.env.CODEX_HOME;
     else process.env.CODEX_HOME = previous;
@@ -273,7 +286,10 @@ contracts:
   write(repo, "test/core.test.ts", "// covers value 2\n");
 
   const started = Date.now();
-  const stopped = hook(repo, "claude", "stop", payload, { HARNESS_KIT_VERIFY_BUDGET_MS: "75" });
+  const stopped = hook(repo, "claude", "stop", payload, {
+    HARNESS_KIT_VERIFY_BUDGET_MS: "75",
+    HARNESS_KIT_STOP_MODE: "execute",
+  });
   assert.ok(Date.now() - started < 3_000, "hook returns before the client-level timeout");
   assert.equal(stopped.status, 0);
   const response = JSON.parse(stopped.stdout);

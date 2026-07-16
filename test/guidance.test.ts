@@ -29,21 +29,23 @@ test("guidance separates maintenance improvements from on-demand boundaries", ()
   assert.deepEqual(guidance.nextActions.map((action) => action.id), ["improve-verification-automation"]);
   assert.equal(guidance.nextActions[0]?.when, "harness-maintenance");
 });
-test("missing, configured, and conflicting Hooks produce different owners and actions", () => {
+test("missing, configured, and conflicting Hooks are recommended only — deliver remains the task gate", () => {
   const missing: AgentHookStatus = {
     state: "degraded",
     configuredAgents: [],
     issues: [".agents/hooks/harness-agent-hook.sh runner is missing", "no complete effective Agent SessionStart + Stop hook pair is configured"],
   };
   const install = buildHarnessGuidance({ hooks: missing }).nextActions[0]!;
-  assert.equal(install.id, "install-lifecycle-hooks");
+  assert.equal(install.id, "optional-install-lifecycle-hooks");
   assert.equal(install.owner, "agent");
-  assert.equal(install.priority, "required");
+  assert.equal(install.priority, "recommended");
+  assert.ok(install.commands.some((c) => /deliver/.test(c)));
 
   const configured: AgentHookStatus = { state: "configured", configuredAgents: ["codex"], issues: [] };
-  const prove = buildHarnessGuidance({ hooks: configured }).nextActions[0]!;
-  assert.equal(prove.id, "prove-lifecycle-hooks");
-  assert.equal(prove.owner, "agent");
+  const observe = buildHarnessGuidance({ hooks: configured }).nextActions[0]!;
+  assert.equal(observe.id, "optional-lifecycle-hook-observation");
+  assert.equal(observe.priority, "recommended");
+  assert.doesNotMatch(observe.completion, /fresh Agent session|hookActive/);
 
   const conflicting: AgentHookStatus = {
     state: "degraded",
@@ -53,6 +55,7 @@ test("missing, configured, and conflicting Hooks produce different owners and ac
   const review = buildHarnessGuidance({ hooks: conflicting }).nextActions[0]!;
   assert.equal(review.id, "review-lifecycle-hook-conflict");
   assert.equal(review.owner, "human");
+  assert.equal(review.priority, "recommended");
   assert.deepEqual(review.commands, []);
 });
 

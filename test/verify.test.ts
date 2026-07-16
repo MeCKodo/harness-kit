@@ -44,8 +44,9 @@ test("verify --json emits one structured document", () => {
   assert.ok(result.body.hooks.issues.some((issue: string) => /runner|not installed|not configured/.test(issue)));
   assert.deepEqual(result.body.gapSummary, { total: 0, recommended: 0, informational: 0 });
   assert.deepEqual(result.body.gapDetails, []);
-  assert.equal(result.body.nextActions[0].id, "install-lifecycle-hooks");
+  assert.equal(result.body.nextActions[0].id, "optional-install-lifecycle-hooks");
   assert.equal(result.body.nextActions[0].owner, "agent");
+  assert.equal(result.body.nextActions[0].priority, "recommended");
   assert.ok(Array.isArray(result.body.messages));
   assert.ok(result.body.messages.some((message: any) => /validation checks require matching run-checks evidence/.test(message.text)));
 });
@@ -108,7 +109,8 @@ contracts:
   assert.match(compact.stdout, /6 declared: 2 automation improvement\(s\), 4 check\(s\) only when relevant/);
   assert.match(compact.stdout, /details: `harness-kit verify --details`/);
   assert.doesNotMatch(compact.stdout, /Add enforcement for invariant missing-gate/);
-  assert.match(compact.stdout, /Harness readiness: INCOMPLETE/);
+  // Hooks are optional recommended maintenance; deliver is the task gate.
+  assert.match(compact.stdout, /Harness readiness: READY|recommended maintenance/);
 
   const detailed = runVerifyText(repo, true);
   assert.equal(detailed.status, 0, detailed.stderr + detailed.stdout);

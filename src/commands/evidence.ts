@@ -1,3 +1,4 @@
+import { inspectDeliveryStamp, type DeliveryStamp } from "../delivery";
 import { buildHarnessGuidance, type HarnessNextAction } from "../guidance";
 import { agentHookConfigurationFingerprint, inspectAgentHookStatus, type AgentHookStatus } from "../hook-status";
 import { inspectValidationEvidenceFreshness, readLatestValidationSession, readValidationSession } from "../validation-state";
@@ -81,6 +82,7 @@ export function evidenceCmd(repo: string, opts: EvidenceOpts = {}): number {
   const hookConfigurationCurrent = session.agent !== "manual" && !!session.hookConfigFingerprint &&
     agentHookConfigurationFingerprint(repo, session.agent) === session.hookConfigFingerprint;
   const hookActive = valid && hookConfigurationCurrent;
+  const stamp: DeliveryStamp = inspectDeliveryStamp(repo);
   const guidance = buildHarnessGuidance({
     hooks,
     evidence: { found: true, stale, runChecksValid, verifyPassed: evidence.verifyPassed, valid },
@@ -89,6 +91,7 @@ export function evidenceCmd(repo: string, opts: EvidenceOpts = {}): number {
     ...body,
     runChecksValid,
     valid,
+    stamp,
     hookActive,
     hookConfigurationCurrent,
     stale,
@@ -105,16 +108,16 @@ export function evidenceCmd(repo: string, opts: EvidenceOpts = {}): number {
     return valid ? 0 : 1;
   }
 
-  if (valid) ok(evidence.status);
-  else if (stale) err("stale evidence — the change no longer matches this record");
-  else if (evidence.verifyPassed !== true) err("delivery evidence incomplete — matching verify result is missing or failed");
+  if (valid) ok(`stamp: ${stamp.status}`);
+  else if (stale) err("stale stamp — the change no longer matches this record");
+  else if (evidence.verifyPassed !== true) err("delivery stamp incomplete — matching verify result is missing or failed");
   else err(evidence.status);
   info(`session: ${session.token}`);
   info(`agent: ${session.agent}`);
-  if (session.agent === "manual") warn("manual evidence does not prove that an installed lifecycle hook executed");
+  if (session.agent === "manual") info("stamp source: deliver/manual (not a lifecycle hook proof)");
   info(`base: ${evidence.requestedBase} -> ${evidence.resolvedBase ?? "empty tree"}`);
   info(`fingerprint: ${evidence.fingerprint}`);
-  info(`dirty at SessionStart: ${session.initialDirty.length ? session.initialDirty.join(", ") : "(none)"}`);
+  if (session.initialDirty.length) info(`dirty at task/session start: ${session.initialDirty.join(", ")}`);
   if (evidence.verifyPassed !== undefined) info(`verify: ${evidence.verifyPassed ? "passed" : "failed"}`);
   else err("verify: no matching result was recorded");
   if (freshness.error) err(`cannot refresh current validation plan: ${freshness.error}`);
@@ -128,9 +131,14 @@ export function evidenceCmd(repo: string, opts: EvidenceOpts = {}): number {
     info("errors:");
     for (const message of evidence.errors) err(message);
   }
+  if (hooks.configuredAgents.length) {
+    info(`session intercept: ${hooks.state} (configured: ${hooks.configuredAgents.join(",")})`);
+  } else {
+    info("session intercept: none (cooperative deliver only)");
+  }
   const requiredActions = guidance.nextActions.filter((action) => action.priority === "required");
   printNextActions(requiredActions);
-  if (requiredActions.length) warn(`Harness readiness: INCOMPLETE (${requiredActions.length} required action(s) above)`);
-  else ok("Harness readiness: READY");
+  if (!valid) warn(`Delivery stamp: NOT READY (${requiredActions.length} required action(s) above)`);
+  else ok("Delivery stamp: READY");
   return valid ? 0 : 1;
 }

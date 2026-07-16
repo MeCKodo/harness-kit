@@ -23,10 +23,17 @@ Commands:
                                    contracts + drift; nonzero on failure
   plan-checks [options]            compute which declared checks THIS change
                                    should run (impact-driven, executes nothing)
+  task [options]                   manage the worktree task base used by deliver
+                                   (optional; SessionStart also sets it)
+  task-start [options]             record task-start base SHA for this worktree
+                                   so deliver covers later commits
+  deliver [options]                accept this task change: resolve scope →
+                                   run-checks + verify → stamp (preferred finish
+                                   gate)
   run-checks [options]             plan + run resolved checks; record evidence;
                                    nonzero on failure/unresolved blocking gap
-  evidence [options]               show the latest durable run-checks evidence
-                                   for this worktree/session
+  evidence [options]               show the latest durable delivery stamp /
+                                   run-checks evidence for this worktree/session
   record-context-review [options]  record an Agent's completed review of one
                                    knowledge item or module against its bound
                                    sources
@@ -127,6 +134,43 @@ Options:
                     action (default: false)
   -h, --help        display help for command
 
+## task
+Usage: harness-kit task [options]
+
+manage the worktree task base used by deliver (optional; SessionStart also sets
+it)
+
+Options:
+  -C, --repo <dir>  target repo dir (default: current directory)
+  --json            machine-readable output (default: false)
+  -h, --help        display help for command
+
+## task-start
+Usage: harness-kit task-start [options]
+
+record task-start base SHA for this worktree so deliver covers later commits
+
+Options:
+  -C, --repo <dir>  target repo dir (default: current directory)
+  --base <ref>      override base (default: current HEAD)
+  --note <text>     optional task note
+  --json            machine-readable output (default: false)
+  -h, --help        display help for command
+
+## deliver
+Usage: harness-kit deliver [options]
+
+accept this task change: resolve scope → run-checks + verify → stamp (preferred
+finish gate)
+
+Options:
+  -C, --repo <dir>      target repo dir (default: current directory)
+  --base <ref>          explicit task base (overrides task record)
+  --profile <checkset>  use a validation.checksets entry instead of per-module
+                        checks
+  --json                machine-readable output (default: false)
+  -h, --help            display help for command
+
 ## plan-checks
 Usage: harness-kit plan-checks [options]
 
@@ -167,7 +211,8 @@ Options:
 ## evidence
 Usage: harness-kit evidence [options]
 
-show the latest durable run-checks evidence for this worktree/session
+show the latest durable delivery stamp / run-checks evidence for this
+worktree/session
 
 Options:
   -C, --repo <dir>   target repo dir (default: current directory)

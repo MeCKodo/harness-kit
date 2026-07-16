@@ -298,9 +298,9 @@ function verifyInternal(repo: string, opts: VerifyOpts): number {
   emit("info", "\n5) Agent lifecycle hooks");
   const configuredAgents = hooks.configuredAgents.length ? hooks.configuredAgents.join(", ") : "none";
   if (hooks.state === "active")
-    emit("ok", `ACTIVE — ${hooks.evidenceAgent} produced current run-checks + verify evidence; configured: ${configuredAgents}`);
+    emit("ok", `ACTIVE — ${hooks.evidenceAgent} observed on Stop; configured: ${configuredAgents} (optional intercept; task gate is deliver)`);
   else if (hooks.state === "configured")
-    emit("warn", `CONFIGURED — ${configuredAgents}; a fresh Agent session has not produced current Stop evidence yet`);
+    emit("warn", `CONFIGURED — ${configuredAgents}; optional intercept not yet observed. Task acceptance: harness-kit deliver`);
   else emit("warn", `DEGRADED — configured: ${configuredAgents}; ${hooks.issues.join("; ")}`);
 
   emit("info", "\n6) Declared verification boundaries");

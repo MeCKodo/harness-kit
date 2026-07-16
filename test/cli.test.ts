@@ -19,6 +19,17 @@ test("run-checks exposes scoped waiver and evidence options", () => {
   assert.match(result.stdout, /--session <token>/);
 });
 
+test("deliver and task-start are public finish-gate commands", () => {
+  const deliver = spawnSync(TSX, [CLI, "deliver", "--help"], { encoding: "utf8" });
+  assert.equal(deliver.status, 0);
+  assert.match(deliver.stdout, /run-checks \+ verify → stamp|run-checks \+ verify/);
+  assert.match(deliver.stdout, /--base <ref>/);
+
+  const taskStart = spawnSync(TSX, [CLI, "task-start", "--help"], { encoding: "utf8" });
+  assert.equal(taskStart.status, 0);
+  assert.match(taskStart.stdout, /task-start base|base SHA|current HEAD/i);
+});
+
 test("doctor and verify expose an explicit details view without changing JSON mode", () => {
   const doctor = spawnSync(TSX, [CLI, "doctor", "--help"], { encoding: "utf8" });
   assert.equal(doctor.status, 0);

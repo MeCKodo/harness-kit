@@ -1,6 +1,6 @@
 {
   "name": "@erzhe/harness-kit",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "type": "module",
   "description": "AI-friendly repo harness: a manifest.yaml single source of truth that generates AGENTS.md / CLAUDE.md / Cursor rules and enforces invariants, contracts and drift via `harness-kit verify`.",
   "keywords": [

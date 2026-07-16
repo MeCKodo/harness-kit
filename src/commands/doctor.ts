@@ -225,9 +225,9 @@ export function doctorCmd(repo: string, opts: DoctorOpts = {}): number {
   const hooks = inspectAgentHookStatus(repo);
   const configuredAgents = hooks.configuredAgents.length ? hooks.configuredAgents.join(", ") : "none";
   if (hooks.state === "active") {
-    ok(`ACTIVE — ${hooks.evidenceAgent} produced current run-checks + verify evidence; configured: ${configuredAgents}`);
+    ok(`ACTIVE — ${hooks.evidenceAgent} observed on Stop; configured: ${configuredAgents} (optional intercept; task gate is deliver)`);
   } else if (hooks.state === "configured") {
-    warn(`CONFIGURED — ${configuredAgents}; start and finish one fresh Agent session to prove the hooks actually execute`);
+    warn(`CONFIGURED — ${configuredAgents}; optional intercept not yet observed. Task acceptance: harness-kit deliver`);
   } else {
     warn(`DEGRADED — configured: ${configuredAgents}; ${hooks.issues.join("; ")}`);
   }

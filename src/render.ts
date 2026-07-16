@@ -44,16 +44,20 @@ export function renderAgentsMd(m: Manifest): string {
     L.push("2. Find your change-type in `.agents/routing.md` and read the files it points to. Do NOT full-repo grep and guess.");
   else L.push("2. Read the relevant files before editing. Do NOT full-repo grep and guess.");
   if ((m.modules ?? []).some((mod) => (mod.owns?.length ?? 0) > 0) || m.validation)
-    L.push("   If lifecycle hooks are not active, record the task-start commit before editing so committed work can later be checked with `run-checks --base <sha>`.");
+    L.push("   Prefer `harness-kit task start` before editing so committed work stays in the deliver scope.");
   L.push("");
   const hasImpactMap = (m.modules ?? []).some((mod) => (mod.owns?.length ?? 0) > 0) || !!m.validation;
   L.push("Before you finish:");
-  if (hasImpactMap)
+  if (hasImpactMap) {
     L.push(
-      "3. Run `harness-kit run-checks` to verify THIS change (impact-driven) and `harness-kit verify` for drift/invariants. Treat blocking gaps as unfinished work — close them; only eligible coverage gaps may be waived with a scoped reason.",
+      "3. Run `harness-kit deliver` (impact-driven checks + verify + stamp). Only `status=accepted` (or clean `no-change`) means the task is done. If `needs-work`, fix and re-run — do not claim completion without an accepted stamp.",
     );
-  else
-    L.push("3. Run `harness-kit verify`. It enforces the invariants below and classifies anything it cannot check automatically.");
+    L.push(
+      "   Optional: `harness-kit task start` before editing so later commits stay in scope; without it, deliver falls back to the current worktree git diff vs HEAD.",
+    );
+  } else {
+    L.push("3. Run `harness-kit deliver` (or at least `harness-kit verify`). Do not claim completion without a passing stamp/verify.");
+  }
   L.push(
     "4. Read `NEXT ACTIONS` (or JSON `nextActions`): complete every `required | agent` action automatically before finishing; ask the user only for a `required | human` decision. Defer `recommended` maintenance during unrelated product work.",
   );

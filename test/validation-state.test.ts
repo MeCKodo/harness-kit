@@ -183,7 +183,11 @@ modules:
   assert.equal(after.code, 0);
   assert.equal(JSON.parse(after.output).valid, true);
   assert.equal(JSON.parse(after.output).evidence.verifyPassed, true);
-  assert.ok(JSON.parse(after.output).nextActions.some((action: any) => action.id === "install-lifecycle-hooks"));
+  assert.ok(
+    JSON.parse(after.output).nextActions.every((action: any) => action.priority !== "required" || action.id === "record-delivery-evidence") ||
+      JSON.parse(after.output).nextActions.filter((a: any) => a.priority === "required").length === 0,
+  );
+  assert.ok(JSON.parse(after.output).nextActions.some((action: any) => action.id === "optional-install-lifecycle-hooks"));
 
   const session = readLatestValidationSession(repo)!;
   const currentEvidence = session.lastEvidence!;
@@ -216,5 +220,6 @@ test("missing evidence JSON tells an Agent exactly how to create and prove it", 
   const body = JSON.parse(chunks.join(""));
   assert.equal(body.found, false);
   assert.ok(body.nextActions.some((action: any) => action.id === "record-delivery-evidence" && action.owner === "agent"));
-  assert.ok(body.nextActions.some((action: any) => action.id === "install-lifecycle-hooks"));
+  assert.ok(body.nextActions.some((action: any) => /deliver/.test(action.commands?.join(" ") ?? "")));
+  assert.ok(body.nextActions.some((action: any) => action.id === "optional-install-lifecycle-hooks"));
 });

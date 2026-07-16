@@ -55,3 +55,4 @@ test("frontend and Electron gate examples contain real package scripts and execu
   assert.match(readFileSync(join(electron, "e2e", "renderer", "navigation.spec.mjs"), "utf8"), /test\([\s\S]*page\.goto/);
   assert.match(readFileSync(join(electron, "e2e", "electron", "ipc.spec.mjs"), "utf8"), /electron\.launch[\s\S]*notes:list|electron\.launch[\s\S]*Load notes/);
 });
+

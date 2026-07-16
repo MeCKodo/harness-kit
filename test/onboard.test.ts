@@ -118,17 +118,13 @@ test("onboard separates analysis from sync and installs only required Agent hook
   assert.deepEqual(unconditionalCiInstructions, []);
 });
 
-test("check-loop prints the two-gate loop and durable evidence guidance", () => {
+test("check-loop prints deliver as the primary finish gate", () => {
   const { code, out } = captureStdout(checkLoopCmd);
   assert.equal(code, 0);
-  assert.match(out, /run-checks \+ verify/);
+  assert.match(out, /harness-kit deliver/);
+  assert.match(out, /accepted/);
   assert.match(out, /harness-kit evidence/);
-  assert.match(out, /--where <输出中的 scope>/);
-  assert.match(out, /所有 `required \| agent`.*自动完成/);
-  assert.match(out, /`required \| human`.*明确授权/);
-  assert.match(out, /hookActive:true/);
-  assert.match(out, /validation gate.*profile.*不能绕过/i);
-  assert.match(out, /gate:.*acceptance.*unit/i);
-  assert.match(out, /validation-gate-invalid.*不可豁免/);
-  assert.match(out, /不要只报一个 GAP 总数让用户判断/);
+  assert.match(out, /工作区 git diff|worktree/i);
+  assert.match(out, /不要求新开会话|不要.*新会话|must not demand a new session/);
+  assert.match(out, /validation gate/i);
 });

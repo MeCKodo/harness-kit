@@ -184,53 +184,71 @@ function unsafeHookIssue(issue: string): boolean {
 }
 
 function hookActions(hooks: AgentHookStatus): HarnessNextAction[] {
+  // Hooks are an optional session intercept. Delivery quality is driven by `deliver` stamps,
+  // not by proving hookActive in a fresh session — never require "open a new conversation".
   if (hooks.state === "active") return [];
   const configured = hooks.configuredAgents.join(",");
-  if (hooks.state === "configured" || (hooks.configuredAgents.length > 0 && hooks.issues.every(evidenceOnlyIssue))) {
-    return [{
-      id: "prove-lifecycle-hooks",
-      priority: "required",
-      owner: "agent",
-      when: "before-harness-ready",
-      title: "Prove the lifecycle Hook in a fresh Agent session",
-      reason:
-        `A complete Hook is configured for ${configured || "the current Agent"}, but no current SessionStart + Stop evidence proves that the host executed it.`,
-      commands: ["harness-kit evidence --repo . --json"],
-      completion: "A newly created Agent session finishes once and evidence reports hookActive: true.",
-    }];
-  }
 
   const unsafe = hooks.issues.filter(unsafeHookIssue);
   if (unsafe.length) {
     return [{
       id: "review-lifecycle-hook-conflict",
-      priority: "required",
+      priority: "recommended",
       owner: "human",
-      when: "before-harness-ready",
-      title: "Approve resolution of an existing Hook configuration conflict",
+      when: "harness-maintenance",
+      title: "Optional: resolve Hook configuration conflict for session intercept",
       reason:
-        "Harness found a Hook file or registration it cannot safely replace: " + unsafe.join("; "),
+        "Harness found a Hook file or registration it cannot safely replace: " + unsafe.join("; ") +
+        ". Delivery still works via harness-kit deliver without hooks.",
       commands: [],
       completion:
-        "The user approves one exact proposed change; the Agent then installs safely and proves hookActive: true in a fresh session.",
+        "User approves one exact proposed change, or accepts cooperative deliver-only workflow.",
     }];
   }
 
-  const agents = configured || "<current-agent>";
+  if (hooks.state === "configured" || (hooks.configuredAgents.length > 0 && hooks.issues.every(evidenceOnlyIssue))) {
+    return [{
+      id: "optional-lifecycle-hook-observation",
+      priority: "recommended",
+      owner: "agent",
+      when: "harness-maintenance",
+      title: "Optional: observe lifecycle Hook on a later Stop",
+      reason:
+        `Hooks are configured for ${configured || "the current Agent"} but not yet observed. This does not block delivery — use harness-kit deliver for task acceptance.`,
+      commands: ["harness-kit deliver --repo .", "harness-kit evidence --repo . --json"],
+      completion: "Deliver stamp is valid; hook observation is optional.",
+    }];
+  }
+
+  if (!hooks.configuredAgents.length) {
+    return [{
+      id: "optional-install-lifecycle-hooks",
+      priority: "recommended",
+      owner: "agent",
+      when: "harness-maintenance",
+      title: "Optional: install Agent Stop intercept for session-level loops",
+      reason:
+        "Without Stop hooks, agents must run harness-kit deliver cooperatively. Install hooks only when the host supports them.",
+      commands: [
+        "harness-kit deliver --repo .",
+        `harness-kit install-hooks --repo . --stop --agents ${configured || "<current-agent>"}`,
+      ],
+      completion: "Deliver works without hooks; hooks only add session intercept when the host fires Stop.",
+    }];
+  }
+
   return [{
-    id: hooks.configuredAgents.length ? "repair-lifecycle-hooks" : "install-lifecycle-hooks",
-    priority: "required",
+    id: "repair-lifecycle-hooks",
+    priority: "recommended",
     owner: "agent",
-    when: "before-harness-ready",
-    title: hooks.configuredAgents.length ? "Repair the Agent lifecycle Hook" : "Install the Agent lifecycle Hook",
-    reason:
-      "Automatic SessionStart + Stop validation is not currently effective. The Agent should handle safe installation without asking the user to choose an implementation.",
+    when: "harness-maintenance",
+    title: "Optional: repair Agent lifecycle Hook configuration",
+    reason: "Hook configuration is incomplete or degraded. Delivery still uses harness-kit deliver.",
     commands: [
-      `harness-kit install-hooks --repo . --stop --agents ${agents}`,
-      "harness-kit install-hooks --repo . --stop --agents codex --allow-user-dispatcher  # linked Codex worktree only",
-      "harness-kit evidence --repo . --json  # after one fresh Agent session finishes",
+      `harness-kit install-hooks --repo . --stop --agents ${configured}`,
+      "harness-kit deliver --repo .",
     ],
-    completion: "A fresh Agent session records both gates and evidence reports hookActive: true.",
+    completion: "Hooks install cleanly or the team accepts deliver-only cooperative mode.",
   }];
 }
 
@@ -241,14 +259,13 @@ function evidenceActions(evidence: EvidenceGuidanceInput): HarnessNextAction[] {
       priority: "required",
       owner: "agent",
       when: "before-finish",
-      title: "Create delivery evidence for this change",
-      reason: "No run-checks + verify evidence exists for the current worktree/session.",
+      title: "Accept this change with harness-kit deliver",
+      reason: "No delivery stamp exists for the current worktree/session.",
       commands: [
-        "harness-kit run-checks --repo . --base <task-start-sha>",
-        "harness-kit verify --repo .",
+        "harness-kit deliver --repo .",
         "harness-kit evidence --repo . --json",
       ],
-      completion: "Evidence reports valid: true for the current code fingerprint.",
+      completion: "deliver reports status=accepted (or no-change) and evidence stamp is valid.",
     }];
   }
   if (evidence.stale) {
@@ -257,14 +274,10 @@ function evidenceActions(evidence: EvidenceGuidanceInput): HarnessNextAction[] {
       priority: "required",
       owner: "agent",
       when: "before-finish",
-      title: "Re-run validation for the current code",
-      reason: "The saved green result belongs to an older code fingerprint.",
-      commands: [
-        "harness-kit run-checks --repo . --base <task-start-sha>",
-        "harness-kit verify --repo .",
-        "harness-kit evidence --repo . --json",
-      ],
-      completion: "Evidence is no longer stale and reports valid: true.",
+      title: "Re-run deliver for the current code",
+      reason: "The saved green stamp belongs to an older code fingerprint.",
+      commands: ["harness-kit deliver --repo .", "harness-kit evidence --repo . --json"],
+      completion: "Stamp is no longer stale and deliver reports accepted.",
     }];
   }
   if (!evidence.runChecksValid) {
@@ -273,10 +286,10 @@ function evidenceActions(evidence: EvidenceGuidanceInput): HarnessNextAction[] {
       priority: "required",
       owner: "agent",
       when: "before-finish",
-      title: "Complete the impact-driven checks",
+      title: "Complete impact-driven delivery checks",
       reason: "The selected checks did not produce valid evidence for the current code.",
-      commands: ["harness-kit run-checks --repo . --base <task-start-sha>", "harness-kit evidence --repo . --json"],
-      completion: "Evidence reports runChecksValid: true for the current code fingerprint.",
+      commands: ["harness-kit deliver --repo .", "harness-kit evidence --repo . --json"],
+      completion: "deliver reports accepted and stamp runChecksValid: true.",
     }];
   }
   if (!evidence.verifyPassed || !evidence.valid) {
@@ -285,10 +298,10 @@ function evidenceActions(evidence: EvidenceGuidanceInput): HarnessNextAction[] {
       priority: "required",
       owner: "agent",
       when: "before-finish",
-      title: "Complete repository verification",
+      title: "Complete delivery verification",
       reason: "Change checks passed, but matching verify evidence is missing or failed.",
-      commands: ["harness-kit verify --repo .", "harness-kit evidence --repo . --json"],
-      completion: "Evidence reports valid: true for the current code fingerprint.",
+      commands: ["harness-kit deliver --repo .", "harness-kit evidence --repo . --json"],
+      completion: "deliver reports accepted and stamp valid: true.",
     }];
   }
   return [];

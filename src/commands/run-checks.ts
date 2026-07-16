@@ -18,12 +18,22 @@ import { planRepositoryChecks } from "../validation-plan";
 
 export interface RunChecksOpts {
   base?: string;
+  /** Diff mode. Session/task/delivery use exact; bare CLI defaults to merge-base. */
+  mode?: "merge-base" | "exact";
+  /**
+   * Total wall-clock budget for all selected checks.
+   * Omit for the default 7-minute CLI budget.
+   * Pass 0 for unlimited (delivery path — long E2E is intentional).
+   */
+  budgetMs?: number;
   json?: boolean;
   profile?: string;
   waive?: string;
   where?: string;
   reason?: string;
   session?: string;
+  /** When true, clean worktree is no-change without manual-base-required. */
+  allowEmptyAsNoChange?: boolean;
 }
 
 interface Failure {
@@ -70,11 +80,12 @@ function isWaivableGap(gap: Gap): boolean {
 
 function runOne(repo: string, cmd: string, timeoutMs: number): { ok: boolean; code: number; logTail: string; durationMs: number } {
   const started = Date.now();
+  const timeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? Math.max(1, timeoutMs) : undefined;
   const r = spawnSync(cmd, {
     cwd: repo,
     shell: true,
     encoding: "utf8",
-    timeout: Math.max(1, timeoutMs),
+    ...(timeout !== undefined ? { timeout } : {}),
     maxBuffer: 32 * 1024 * 1024,
   });
   const out = `${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `\n${r.error.message}` : ""}`;
@@ -201,9 +212,9 @@ function fallbackChanges(base: string): ChangeSet {
 export function runChecksCmd(repo: string, opts: RunChecksOpts): number {
   const errors: string[] = [];
   let session: ValidationSession | null = null;
-  const implicitManualBase = !opts.session && opts.base === undefined;
+  const implicitManualBase = !opts.session && opts.base === undefined && !opts.allowEmptyAsNoChange;
   let base = opts.base ?? "HEAD";
-  let mode: "merge-base" | "exact" = "merge-base";
+  let mode: "merge-base" | "exact" = opts.mode ?? "merge-base";
 
   if (opts.session) {
     try {
@@ -306,20 +317,24 @@ export function runChecksCmd(repo: string, opts: RunChecksOpts): number {
   const skipped: { id: string; reason: string }[] = [];
   const checks: CheckEvidence[] = [];
   const capabilities = manifest?.capabilities ?? {};
-  const checkDeadline = Date.now() + CHECK_BUDGET_MS;
+  // budgetMs === 0 → unlimited (deliver). Otherwise default 7 minutes for bare run-checks.
+  const unlimitedBudget = opts.budgetMs === 0;
+  const checkDeadline = unlimitedBudget
+    ? Number.POSITIVE_INFINITY
+    : Date.now() + (opts.budgetMs !== undefined && opts.budgetMs > 0 ? opts.budgetMs : CHECK_BUDGET_MS);
 
   if (!errors.length) {
     for (const check of plan.checks) {
       const remainingMs = checkDeadline - Date.now();
-      if (remainingMs <= 0) {
-        const reason = "run-checks 的 7 分钟总检查预算已耗尽";
+      if (!unlimitedBudget && remainingMs <= 0) {
+        const reason = "run-checks 的检查总预算已耗尽；复杂任务请用 harness-kit deliver（无紧总预算）";
         skipped.push({ id: check.id, reason });
         checks.push({ id: check.id, status: "not-run", exitCode: 1, durationMs: 0 });
         plan.gaps.push({
           kind: "selected-check-not-run",
           where: check.id,
           why: reason,
-          suggestion: "拆分快速自动门禁；超长验证放到 routing/manual GAP 或独立 CI",
+          suggestion: "使用 harness-kit deliver 做任务验收，或拆分快速自动门禁",
           severity: "blocking",
         });
         continue;
@@ -338,7 +353,7 @@ export function runChecksCmd(repo: string, opts: RunChecksOpts): number {
         });
         continue;
       }
-      const result = runOne(repo, cap.run, remainingMs);
+      const result = runOne(repo, cap.run, unlimitedBudget ? 0 : remainingMs);
       checks.push({ id: check.id, status: result.ok ? "passed" : "failed", exitCode: result.code, durationMs: result.durationMs });
       if (result.ok) passed.push(check.id);
       else failed.push({ id: check.id, cmd: cap.run, code: result.code, logTail: result.logTail, durationMs: result.durationMs });
